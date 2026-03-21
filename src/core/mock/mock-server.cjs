@@ -219,21 +219,21 @@ async function handleRunsStream(req, res, threadId) {
 
   const words = responseText.split("");
   let index = 0;
+  const msgId = `mock-msg-${Date.now()}`;
 
   function sendChunk() {
     if (index < words.length) {
       sendSSE(
         res,
-        "values",
-        {
-          messages: [
-            {
-              type: "ai",
-              id: `mock-msg-${Date.now()}`,
-              content: words.slice(0, index + 1).join(""),
-            },
-          ],
-        },
+        "messages",
+        [
+          {
+            type: "ai",
+            id: msgId,
+            content: words.slice(0, index + 1).join(""),
+          },
+          { langgraph_checkpoint_ns: "main" }
+        ],
         String(index)
       );
       index++;
