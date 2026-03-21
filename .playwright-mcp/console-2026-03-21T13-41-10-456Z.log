@@ -1,0 +1,14 @@
+[   35787ms] [ERROR] Unsafe attempt to load URL http://localhost:8001/ from frame with URL chrome-error://chromewebdata/. Domains, protocols and ports must match.
+ @ chrome-error://chromewebdata/:0
+[   67524ms] ReferenceError: require is not defined
+    at Object.streamdown (http://localhost:8000/main.ff07c2daf6260dd34b32.js:959:1)
+    at __webpack_require__ (http://localhost:8000/main.ff07c2daf6260dd34b32.js:1122:32)
+    at fn (http://localhost:8000/main.ff07c2daf6260dd34b32.js:1386:21)
+    at eval (webpack://chat-demo/./src/components/ai-elements/message.tsx?:28:68)
+    at ./src/components/ai-elements/message.tsx (http://localhost:8000/main.ff07c2daf6260dd34b32.js:99:1)
+    at __webpack_require__ (http://localhost:8000/main.ff07c2daf6260dd34b32.js:1122:32)
+    at fn (http://localhost:8000/main.ff07c2daf6260dd34b32.js:1386:21)
+    at eval (webpack://chat-demo/./src/components/workspace/messages/markdown-content.tsx?:7:89)
+    at ./src/components/workspace/messages/markdown-content.tsx (http://localhost:8000/main.ff07c2daf6260dd34b32.js:499:1)
+    at __webpack_require__ (http://localhost:8000/main.ff07c2daf6260dd34b32.js:1122:32)
+[   67586ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:8000/favicon.ico:0

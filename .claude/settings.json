@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node --check \"d:/Code/chat-demo-webpack/webpack.config.cjs\")",
+      "Bash(taskkill /F /IM node.exe)",
+      "Bash(taskkill //F //IM node.exe)",
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "mcp__chrome-devtools__list_pages",
+      "mcp__chrome-devtools__navigate_page",
+      "mcp__chrome-devtools__take_snapshot",
+      "mcp__chrome-devtools__list_console_messages",
+      "mcp__chrome-devtools__get_console_message",
+      "mcp__chrome-devtools__list_network_requests",
+      "Bash(rm -f vite.config.ts)",
+      "Bash(ls *.config.*)",
+      "Bash(npm pkg:*)"
+    ]
+  }
+}
