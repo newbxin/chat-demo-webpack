@@ -2,6 +2,7 @@ const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const { CleanWebpackPlugin } = require('clean-webpack-plugin');
 const ProgressBarPlugin = require('progress-bar-webpack-plugin');
+const { setupMockServer } = require('./src/core/mock/mock-server.cjs');
 
 const config = {
   entry: './src/main.tsx',
@@ -72,6 +73,10 @@ const config = {
         errors: true,
         warnings: false,
       },
+    },
+    setupMiddlewares(middlewares, devServer) {
+      setupMockServer(devServer.app);
+      return middlewares;
     },
   },
   optimization: {

@@ -13,7 +13,30 @@
       "mcp__chrome-devtools__list_network_requests",
       "Bash(rm -f vite.config.ts)",
       "Bash(ls *.config.*)",
-      "Bash(npm pkg:*)"
+      "Bash(npm pkg:*)",
+      "mcp__plugin_playwright_playwright__browser_console_messages",
+      "Bash(lsof -ti:8000)",
+      "Bash(xargs -r kill -9)",
+      "Bash(node -e \"require\\(''./src/core/mock/server''\\)\")",
+      "Bash(node -e \"const {setupMockServer} = require\\(''./src/core/mock/server''\\); console.log\\(''Mock server loaded successfully''\\);\")",
+      "Bash(node -e \"const s = require\\(''./server''\\); console.log\\(''loaded''\\);\")",
+      "Bash(node -e \"console.log\\(require.resolve\\(''../data/store''\\)\\)\")",
+      "Read(//d/Code/data/**)",
+      "Bash(node -e \"require\\(''''./src/core/mock/server''''\\)\")",
+      "Bash(node -e \":*)",
+      "Bash(node -e \"require\\(''''./src/core/mock/mock-server''''\\)\")",
+      "Bash(netstat -ano)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/)",
+      "Bash(ls -la d:/Code/chat-demo-webpack/webpack.config*)",
+      "Bash(npx webpack:*)",
+      "Bash(curl -s http://localhost:8000/)",
+      "mcp__plugin_playwright_playwright__browser_close",
+      "mcp__chrome-devtools__fill",
+      "mcp__chrome-devtools__press_key",
+      "mcp__chrome-devtools__wait_for",
+      "mcp__chrome-devtools__take_screenshot",
+      "mcp__chrome-devtools__type_text",
+      "mcp__plugin_context7_context7__resolve-library-id"
     ]
   }
 }
