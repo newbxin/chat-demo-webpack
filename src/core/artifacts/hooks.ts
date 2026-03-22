@@ -25,7 +25,7 @@ export function useArtifactContent({
     return null;
   }, [filepath, isWriteFile, thread]);
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error } = useQuery<string>({
     queryKey: ["artifact", filepath, threadId, isMock],
     queryFn: () => {
       return loadArtifactContent({ filepath, threadId, isMock });

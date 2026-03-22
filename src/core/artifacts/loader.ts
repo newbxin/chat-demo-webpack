@@ -1,7 +1,3 @@
-import type { BaseStream } from "@langchain/langgraph-sdk/react";
-
-import type { AgentThreadState } from "../threads";
-
 import { urlOfArtifact } from "./utils";
 
 export async function loadArtifactContent({
@@ -28,8 +24,17 @@ export function loadArtifactContentFromToolCall({
   thread,
 }: {
   url: string;
-  thread: BaseStream<AgentThreadState>;
-}) {
+  thread: {
+    messages: Array<{
+      id?: string;
+      type?: string;
+      tool_calls?: Array<{
+        id?: string;
+        args: Record<string, unknown>;
+      }>;
+    }>;
+  };
+}): string | null {
   const url = new URL(urlString);
   const toolCallId = url.searchParams.get("tool_call_id");
   const messageId = url.searchParams.get("message_id");
@@ -40,8 +45,11 @@ export function loadArtifactContentFromToolCall({
         (toolCall) => toolCall.id === toolCallId,
       );
       if (toolCall) {
-        return toolCall.args.content;
+        return typeof toolCall.args.content === "string"
+          ? toolCall.args.content
+          : null;
       }
     }
   }
+  return null;
 }

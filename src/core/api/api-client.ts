@@ -14,7 +14,7 @@ function createCompatibleClient(isMock?: boolean): LangGraphClient {
   const originalRunStream = client.runs.stream.bind(client.runs);
   client.runs.stream = ((threadId, assistantId, payload) =>
     originalRunStream(
-      threadId,
+      threadId as never,
       assistantId,
       sanitizeRunStreamOptions(payload),
     )) as typeof client.runs.stream;
@@ -32,6 +32,9 @@ function createCompatibleClient(isMock?: boolean): LangGraphClient {
 
 let _singleton: LangGraphClient | null = null;
 export function getAPIClient(isMock?: boolean): LangGraphClient {
-  _singleton ??= createCompatibleClient(isMock);
+  if (isMock) {
+    return createCompatibleClient(true);
+  }
+  _singleton ??= createCompatibleClient(false);
   return _singleton;
 }

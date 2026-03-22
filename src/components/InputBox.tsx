@@ -5,7 +5,10 @@ import { useState } from "react";
 
 import { cn } from "@/lib/utils";
 
-export function InputBox({ className, onSubmit }: {
+export function InputBox({
+  className,
+  onSubmit,
+}: {
   className?: string;
   onSubmit?: (text: string) => void;
 }) {
@@ -21,7 +24,7 @@ export function InputBox({ className, onSubmit }: {
     <form
       className={cn(
         "bg-background/85 flex items-end gap-2 rounded-2xl border p-2 backdrop-blur-sm",
-        className
+        className,
       )}
       onSubmit={(e) => {
         e.preventDefault();

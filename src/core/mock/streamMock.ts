@@ -11,7 +11,11 @@ export function simulateStreamingResponse(
   onChunk: (chunk: string) => void,
   onComplete: () => void
 ): () => void {
-  const responseText = MOCK_RESPONSES[Math.floor(Math.random() * MOCK_RESPONSES.length)];
+  const responseIndex =
+    userMessage.trim().length > 20
+      ? 1
+      : Math.floor(Math.random() * MOCK_RESPONSES.length);
+  const responseText = MOCK_RESPONSES[responseIndex]!;
   const words = responseText.split("");
   let index = 0;
   let cancelled = false;

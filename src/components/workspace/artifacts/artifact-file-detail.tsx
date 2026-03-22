@@ -179,7 +179,7 @@ export function ArtifactFileDetail({
                   tooltip="Install skill"
                   disabled={
                     isInstalling ||
-                    env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true"
+                    env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY
                   }
                   onClick={handleInstallSkill}
                 />
@@ -272,7 +272,13 @@ export function ArtifactFilePreview({
         <Streamdown
           className="size-full"
           {...streamdownPlugins}
-          components={{ a: CitationLink }}
+          components={{
+            a: ({ href, children, className, ...props }) => (
+              <CitationLink href={href} className={className} {...props}>
+                {children}
+              </CitationLink>
+            ),
+          }}
         >
           {content ?? ""}
         </Streamdown>

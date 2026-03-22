@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, ReactNode } from 'react';
+import type { Message } from "@langchain/langgraph-sdk";
 import { threads } from '@/data/threads';
 import type { ThreadState } from '@/types/thread';
 
@@ -19,7 +20,7 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
     ...threadData.data,
     isLoading: false,
     isThreadLoading: false,
-    messages: threadData.data.values.messages,
+    messages: threadData.data.values.messages as Message[],
   } : null;
 
   return (

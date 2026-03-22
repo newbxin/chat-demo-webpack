@@ -48,10 +48,10 @@ export function MessageGroup({
   isLoading?: boolean;
 }) {
   const [showAbove, setShowAbove] = useState(
-    env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true",
+    env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY,
   );
   const [showLastThinking, setShowLastThinking] = useState(
-    env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true",
+    env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY,
   );
   const steps = useMemo(() => convertToSteps(messages), [messages]);
   const lastToolCallStep = useMemo(() => {

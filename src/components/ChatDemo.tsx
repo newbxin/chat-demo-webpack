@@ -8,7 +8,7 @@ import { useThreadStream } from '@/core/threads/hooks';
 import { useLocalSettings } from '@/core/settings/hooks';
 
 export function ChatDemo() {
-  const { threads, currentThread, currentThreadId, setCurrentThreadId } = useThreadContext();
+  const { currentThread, currentThreadId } = useThreadContext();
   const [settings] = useLocalSettings();
   const [, sendMessage] = useThreadStream({
     threadId: currentThreadId,

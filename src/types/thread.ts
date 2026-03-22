@@ -2,10 +2,10 @@ import type { Message } from '@langchain/langgraph-sdk';
 
 export interface ThreadData {
   values: {
-    messages: Message[];
+    messages: unknown[];
     title?: string;
     artifacts?: string[];
-    todos?: any[];
+    todos?: unknown[];
   };
 }
 

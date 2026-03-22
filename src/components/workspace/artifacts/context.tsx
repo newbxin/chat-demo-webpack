@@ -35,7 +35,7 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
   const [selectedArtifact, setSelectedArtifact] = useState<string | null>(null);
   const [autoSelect, setAutoSelect] = useState(true);
   const [open, setOpen] = useState(
-    env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true",
+    env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY,
   );
   const [autoOpen, setAutoOpen] = useState(true);
 
