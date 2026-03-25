@@ -8,27 +8,37 @@ import {
   useState,
 } from "react";
 
-import type { ThreadState } from "@/types/thread";
 import {
   createThreadStreamState,
   type ThreadStreamState,
 } from "@/core/threads/stream-state";
+import type { ThreadState } from "@/types/thread";
 
+// 应用支持的会话类型。
+// - main: 主聊天窗口
+// - agent: agent 内页聊天窗口
+// 两类会话状态完全隔离，避免消息和加载态串线。
 export enum SessionType {
   main = "main",
   agent = "agent",
 }
 
+// 以 SessionType 分桶的状态存储结构。
 type SessionStateMap = Record<SessionType, ThreadStreamState>;
 type SessionMessagesMap = Record<SessionType, Message[]>;
 
+// 与 React setState 语义保持一致：
+// 既支持直接传值，也支持函数式更新。
 type StateUpdater<T> = T | ((prev: T) => T);
 
+// 历史回填/切换线程时使用的参数。
 type HydrateSessionPayload = {
   threadId?: string | null;
   initialState?: ThreadState | null;
 };
 
+// Context 暴露的底层能力都显式接收 sessionType。
+// useSession(sessionType) 会在此基础上返回绑定当前会话的便捷 API。
 type SessionContextValue = {
   getThreadState: (sessionType: SessionType) => ThreadStreamState;
   getOptimisticMessages: (sessionType: SessionType) => Message[];
@@ -77,9 +87,12 @@ function createInitialOptimisticMessages(): SessionMessagesMap {
 }
 
 export function SessionProvider({ children }: { children: ReactNode }) {
+  // 每个会话对应一份“权威流式状态”（来自服务端事件）。
   const [sessions, setSessions] = useState<SessionStateMap>(
     createInitialSessionStates,
   );
+
+  // 每个会话对应一份“乐观消息队列”，用于提升发送时的即时反馈。
   const [optimisticMessagesMap, setOptimisticMessagesMap] =
     useState<SessionMessagesMap>(createInitialOptimisticMessages);
 
@@ -93,6 +106,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [optimisticMessagesMap],
   );
 
+  // 整体更新某个会话的 ThreadStreamState。
   const setThreadState = useCallback(
     (sessionType: SessionType, updater: StateUpdater<ThreadStreamState>) => {
       setSessions((prev) => ({
@@ -103,6 +117,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  // 单字段更新某个会话的 ThreadStreamState。
+  // 常用于 threadId/runId/isLoading/error 这类局部变更。
   const setThreadStateField = useCallback(
     <K extends keyof ThreadStreamState>(
       sessionType: SessionType,
@@ -133,6 +149,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  // 会话回填：切换线程或恢复历史时重建状态。
+  // 同时清空乐观消息，避免旧占位消息污染新会话。
   const hydrateSession = useCallback(
     (sessionType: SessionType, payload?: HydrateSessionPayload) => {
       const nextThreadId = payload?.threadId ?? null;
@@ -142,6 +160,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         ...prev,
         [sessionType]: createThreadStreamState(nextThreadId, nextInitialState),
       }));
+
       setOptimisticMessagesMap((prev) => ({
         ...prev,
         [sessionType]: [],
@@ -174,6 +193,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// 会话绑定的消费 Hook。
+// 业务层只需传一次 sessionType，后续直接使用扁平字段和 setter。
 export function useSession(sessionType: SessionType) {
   const context = useContext(SessionContext);
   if (!context) {
@@ -183,6 +204,8 @@ export function useSession(sessionType: SessionType) {
   const threadState = context.getThreadState(sessionType);
   const optimisticMessages = context.getOptimisticMessages(sessionType);
 
+  // 提供给 UI 的合并态：
+  // 将真实消息与乐观消息合并，并确保 messages 与 values.messages 始终一致。
   const thread = useMemo<ThreadState>(() => {
     if (optimisticMessages.length > 0) {
       return {
@@ -256,6 +279,8 @@ export function useSession(sessionType: SessionType) {
   };
 }
 
+// 跨会话管理 Hook（偏底层）。
+// 普通业务组件优先使用 useSession(sessionType)。
 export function useSessionManager() {
   const context = useContext(SessionContext);
   if (!context) {
