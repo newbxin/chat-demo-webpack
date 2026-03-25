@@ -25,6 +25,7 @@ import {
   normalizeIncomingMessages,
   type ThreadStreamState,
 } from "./stream-state";
+import { createErrorAIMessage } from "./error-event";
 import type { AgentThread, AgentThreadState } from "./types";
 
 export type ToolEndEvent = {
@@ -76,6 +77,26 @@ function applyThreadSnapshot(
       artifacts: values.artifacts ?? prev.values.artifacts ?? [],
       todos: values.todos ?? prev.values.todos ?? [],
     },
+    error: undefined,
+  };
+}
+
+function appendThreadMessage(
+  prev: ThreadStreamState,
+  message: Message,
+): ThreadStreamState {
+  const nextMessages = [...prev.messages, message];
+
+  return {
+    ...prev,
+    messages: nextMessages,
+    values: {
+      ...prev.values,
+      messages: nextMessages,
+      artifacts: prev.values.artifacts ?? [],
+      todos: prev.values.todos ?? [],
+    },
+    isLoading: false,
     error: undefined,
   };
 }
@@ -358,6 +379,14 @@ export function useThreadStream({
               if (typeof event.data.title === "string" && event.data.title) {
                 syncThreadTitle(streamingThreadId, event.data.title);
               }
+              return;
+            }
+
+            if (event.event === "error" && event.data) {
+              const errorMessage = createErrorAIMessage(event.data, requestId);
+              setOptimisticMessages([]);
+              setThreadState((prev) => appendThreadMessage(prev, errorMessage));
+              abortController.abort();
               return;
             }
 
