@@ -21,7 +21,9 @@ function getThread(threadId) {
 }
 
 function createThread(values = {}) {
-  const threadId = `thread-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  const threadId =
+    values.thread_id ||
+    `thread-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   const now = new Date().toISOString();
   const thread = {
     thread_id: threadId,
@@ -113,7 +115,10 @@ async function handleThreadHistory(req, res, threadId) {
 
 async function handleThreadCreate(req, res) {
   const body = await parseBody(req);
-  const thread = createThread(body.values);
+  const thread = createThread({
+    ...body.values,
+    thread_id: body.thread_id,
+  });
   sendJSON(res, 201, thread);
 }
 
@@ -201,6 +206,7 @@ async function handleRunsStream(req, res, threadId) {
   }
 
   const runId = `mock-run-${Date.now()}`;
+  const thread = getThread(threadId) || createThread({ thread_id: threadId });
 
   sendSSE(res, "metadata", {
     run_id: runId,
@@ -217,28 +223,48 @@ async function handleRunsStream(req, res, threadId) {
     responseText = `I received your message: "${userText.slice(0, 50)}...". This is a mock response showing that the streaming infrastructure is working correctly.`;
   }
 
-  const words = responseText.split("");
+  const chars = responseText.split("");
   let index = 0;
   const msgId = `mock-msg-${Date.now()}`;
+  const existingMessages = Array.isArray(thread.values.messages)
+    ? [...thread.values.messages]
+    : [];
+  const nextMessages = [
+    ...existingMessages,
+    {
+      type: "human",
+      id: `mock-human-${Date.now()}`,
+      content: [{ type: "text", text: userText }],
+    },
+    {
+      type: "ai",
+      id: msgId,
+      content: "",
+    },
+  ];
 
   function sendChunk() {
-    if (index < words.length) {
+    if (index < chars.length) {
+      nextMessages[nextMessages.length - 1] = {
+        ...nextMessages[nextMessages.length - 1],
+        content: chars.slice(0, index + 1).join(""),
+      };
       sendSSE(
         res,
-        "messages",
-        [
-          {
-            type: "ai",
-            id: msgId,
-            content: words.slice(0, index + 1).join(""),
-          },
-          { langgraph_checkpoint_ns: "main" }
-        ],
+        "values",
+        {
+          messages: nextMessages,
+          title: thread.values.title || "Demo Chat",
+          artifacts: thread.values.artifacts || [],
+        },
         String(index)
       );
       index++;
       setTimeout(sendChunk, 30);
     } else {
+      updateThread(threadId, {
+        messages: nextMessages,
+      });
       sendSSE(res, "end", { status: "complete" });
       res.end();
     }

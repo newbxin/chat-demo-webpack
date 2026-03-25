@@ -1,12 +1,18 @@
 import type { AIMessage, Message } from "@langchain/langgraph-sdk";
 import type { ThreadsClient } from "@langchain/langgraph-sdk/client";
-import { useStream } from "@langchain/langgraph-sdk/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
+import type { ThreadState } from "@/types/thread";
 
+import {
+  createThread,
+  streamThreadRun,
+  type StreamRunRequest,
+  type ThreadStateResponse,
+} from "../api";
 import { getAPIClient } from "../api";
 import type { FileInMessage } from "../messages/utils";
 import type { LocalSettings } from "../settings";
@@ -14,6 +20,11 @@ import { useUpdateSubtask } from "../tasks/context";
 import type { UploadedFileInfo } from "../uploads";
 import { uploadFiles } from "../uploads";
 
+import {
+  createThreadStreamState,
+  normalizeIncomingMessages,
+  type ThreadStreamState,
+} from "./stream-state";
 import type { AgentThread, AgentThreadState } from "./types";
 
 export type ToolEndEvent = {
@@ -23,6 +34,7 @@ export type ToolEndEvent = {
 
 export type ThreadStreamOptions = {
   threadId?: string | null | undefined;
+  initialState?: ThreadState | null;
   context: LocalSettings["context"];
   isMock?: boolean;
   onStart?: (threadId: string) => void;
@@ -30,165 +42,143 @@ export type ThreadStreamOptions = {
   onToolEnd?: (event: ToolEndEvent) => void;
 };
 
+const DEFAULT_THREAD_METADATA = {
+  userInfo: "",
+  source: "Center",
+};
+
+function toAgentThreadState(state: ThreadStreamState): AgentThreadState {
+  // 对外暴露的线程状态需要补齐默认值，避免消费方再处理空字段分支。
+  return {
+    title: state.values.title ?? "",
+    messages: state.messages,
+    artifacts: state.values.artifacts ?? [],
+    todos: state.values.todos as AgentThreadState["todos"],
+  };
+}
+
+function applyThreadSnapshot(
+  prev: ThreadStreamState,
+  values: ThreadStateResponse["values"],
+): ThreadStreamState {
+  // 服务端 values 是整份状态快照，这里统一做一次消息去重和默认值兜底。
+  const nextMessages = Array.isArray(values.messages)
+    ? normalizeIncomingMessages(values.messages)
+    : prev.messages;
+
+  return {
+    ...prev,
+    messages: nextMessages,
+    values: {
+      ...prev.values,
+      ...values,
+      messages: nextMessages,
+      artifacts: values.artifacts ?? prev.values.artifacts ?? [],
+      todos: values.todos ?? prev.values.todos ?? [],
+    },
+    error: undefined,
+  };
+}
+
 export function useThreadStream({
   threadId,
+  initialState,
   context,
   isMock,
   onStart,
   onFinish,
   onToolEnd,
 }: ThreadStreamOptions) {
-  // Track the thread ID that is currently streaming to handle thread changes during streaming
-  const [onStreamThreadId, setOnStreamThreadId] = useState(() => threadId);
-  // Ref to track current thread ID across async callbacks without causing re-renders,
-  // and to allow access to the current thread id in onUpdateEvent
-  const threadIdRef = useRef<string | null>(threadId ?? null);
-  const startedRef = useRef(false);
+  const [threadState, setThreadState] = useState(() =>
+    createThreadStreamState(threadId, initialState),
+  );
+  const [optimisticMessages, setOptimisticMessages] = useState<Message[]>([]);
 
   const listeners = useRef({
     onStart,
     onFinish,
     onToolEnd,
   });
+  const threadStateRef = useRef(threadState);
+  const activeThreadIdRef = useRef<string | null>(threadId ?? null);
+  const streamRequestIdRef = useRef(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Keep listeners ref updated with latest callbacks
   useEffect(() => {
     listeners.current = { onStart, onFinish, onToolEnd };
   }, [onStart, onFinish, onToolEnd]);
 
   useEffect(() => {
+    threadStateRef.current = threadState;
+  }, [threadState]);
+
+  useEffect(() => {
     const normalizedThreadId = threadId ?? null;
-    if (!normalizedThreadId) {
-      // Just reset for new thread creation when threadId becomes null/undefined
-      startedRef.current = false;
-      setOnStreamThreadId(normalizedThreadId);
-    }
-    threadIdRef.current = normalizedThreadId;
+    activeThreadIdRef.current = normalizedThreadId;
+    setOptimisticMessages([]);
+    setThreadState(createThreadStreamState(normalizedThreadId, initialState));
   }, [threadId]);
 
-  const _handleOnStart = useCallback((id: string) => {
-    if (!startedRef.current) {
-      listeners.current.onStart?.(id);
-      startedRef.current = true;
-    }
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
   }, []);
-
-  const handleStreamStart = useCallback(
-    (_threadId: string) => {
-      threadIdRef.current = _threadId;
-      _handleOnStart(_threadId);
-    },
-    [_handleOnStart],
-  );
 
   const queryClient = useQueryClient();
   const updateSubtask = useUpdateSubtask();
 
-  const thread = useStream<AgentThreadState>({
-    client: getAPIClient(isMock),
-    assistantId: "lead_agent",
-    threadId: onStreamThreadId,
-    reconnectOnMount: true,
-    fetchStateHistory: { limit: 1 },
-    onCreated(meta) {
-      handleStreamStart(meta.thread_id);
-      setOnStreamThreadId(meta.thread_id);
-    },
-    onLangChainEvent(event) {
-      if (event.event === "on_tool_end") {
-        listeners.current.onToolEnd?.({
-          name: event.name,
-          data: event.data,
-        });
-      }
-    },
-    onUpdateEvent(data) {
-      const updates: Array<Partial<AgentThreadState> | null> = Object.values(
-        data || {},
+  const syncThreadTitle = useCallback(
+    (nextThreadId: string, title: string) => {
+      // 标题通常会在首轮流式返回后生成，直接同步列表缓存可以避免侧栏标题闪烁或滞后。
+      void queryClient.setQueriesData(
+        {
+          queryKey: ["threads", "search"],
+          exact: false,
+        },
+        (oldData: Array<AgentThread> | undefined) => {
+          return oldData?.map((thread) => {
+            if (thread.thread_id !== nextThreadId) {
+              return thread;
+            }
+
+            return {
+              ...thread,
+              values: {
+                ...thread.values,
+                title,
+              },
+            };
+          });
+        },
       );
-      for (const update of updates) {
-        if (update && "title" in update && update.title) {
-          void queryClient.setQueriesData(
-            {
-              queryKey: ["threads", "search"],
-              exact: false,
-            },
-            (oldData: Array<AgentThread> | undefined) => {
-              return oldData?.map((t) => {
-                if (t.thread_id === threadIdRef.current) {
-                  return {
-                    ...t,
-                    values: {
-                      ...t.values,
-                      title: update.title,
-                    },
-                  };
-                }
-                return t;
-              });
-            },
-          );
-        }
-      }
     },
-    onCustomEvent(event: unknown) {
-      if (
-        typeof event === "object" &&
-        event !== null &&
-        "type" in event &&
-        event.type === "task_running"
-      ) {
-        const e = event as {
-          type: "task_running";
-          task_id: string;
-          message: AIMessage;
-        };
-        updateSubtask({ id: e.task_id, latestMessage: e.message });
-      }
-    },
-    onFinish(state) {
-      listeners.current.onFinish?.(state.values);
-      void queryClient.invalidateQueries({ queryKey: ["threads", "search"] });
-    },
-  });
-
-  // Optimistic messages shown before the server stream responds
-  const [optimisticMessages, setOptimisticMessages] = useState<Message[]>([]);
-  // Track message count before sending so we know when server has responded
-  const prevMsgCountRef = useRef(thread.messages.length);
-
-  // Clear optimistic when server messages arrive (count increases)
-  useEffect(() => {
-    if (
-      optimisticMessages.length > 0 &&
-      thread.messages.length > prevMsgCountRef.current
-    ) {
-      setOptimisticMessages([]);
-    }
-  }, [thread.messages.length, optimisticMessages.length]);
+    [queryClient],
+  );
 
   const sendMessage = useCallback(
     async (
-      threadId: string,
+      maybeThreadId: string | null | undefined,
       message: PromptInputMessage,
       extraContext?: Record<string, unknown>,
     ) => {
       const text = message.text.trim();
 
-      // Capture current count before showing optimistic messages
-      prevMsgCountRef.current = thread.messages.length;
+      // 新请求开始前取消旧流，保证界面只消费“最后一次发送”的结果。
+      abortControllerRef.current?.abort();
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
 
-      // Build optimistic files list with uploading status
-      const optimisticFiles: FileInMessage[] = (message.files ?? []).map(
-        (f) => ({
-          filename: f.filename ?? "",
-          size: 0,
-          status: "uploading" as const,
-        }),
-      );
+      // 用单调递增的 requestId 兜住竞态：即使旧请求晚返回，也不会覆盖当前状态。
+      const requestId = ++streamRequestIdRef.current;
 
-      // Create optimistic human message (shown immediately)
-      const optimisticHumanMsg: Message = {
+      const optimisticFiles: FileInMessage[] = (message.files ?? []).map((file) => ({
+        filename: file.filename ?? "",
+        size: 0,
+        status: "uploading",
+      }));
+
+      const optimisticHumanMessage: Message = {
         type: "human",
         id: `opt-human-${Date.now()}`,
         content: text ? [{ type: "text", text }] : "",
@@ -196,164 +186,283 @@ export function useThreadStream({
           optimisticFiles.length > 0 ? { files: optimisticFiles } : {},
       };
 
-      const newOptimistic: Message[] = [optimisticHumanMsg];
+      const nextOptimisticMessages: Message[] = [optimisticHumanMessage];
       if (optimisticFiles.length > 0) {
-        // Mock AI message while files are being uploaded
-        newOptimistic.push({
+        nextOptimisticMessages.push({
           type: "ai",
           id: `opt-ai-${Date.now()}`,
           content: "Uploading files, please wait...",
           additional_kwargs: { element: "task" },
         });
       }
-      setOptimisticMessages(newOptimistic);
+      // 在真正拿到服务端快照前，先把用户输入和上传态文件渲染出来，降低发送等待感。
+      setOptimisticMessages(nextOptimisticMessages);
 
-      _handleOnStart(threadId);
-
-      let uploadedFileInfo: UploadedFileInfo[] = [];
+      let resolvedThreadId =
+        maybeThreadId ?? activeThreadIdRef.current ?? threadStateRef.current.threadId;
 
       try {
-        // Upload files first if any
+        if (!resolvedThreadId) {
+          const createdThread = await createThread(
+            {
+              metadata: DEFAULT_THREAD_METADATA,
+            },
+            isMock,
+          );
+          resolvedThreadId = createdThread.thread_id;
+          activeThreadIdRef.current = resolvedThreadId;
+          setThreadState((prev) => ({
+            ...prev,
+            threadId: resolvedThreadId,
+          }));
+        }
+
+        const streamingThreadId = resolvedThreadId;
+        listeners.current.onStart?.(streamingThreadId);
+
+        let uploadedFileInfo: UploadedFileInfo[] = [];
         if (message.files && message.files.length > 0) {
-          try {
-            // Convert FileUIPart to File objects by fetching blob URLs
-            const filePromises = message.files.map(async (fileUIPart) => {
-              if (fileUIPart.url && fileUIPart.filename) {
-                try {
-                  // Fetch the blob URL to get the file data
-                  const response = await fetch(fileUIPart.url);
-                  const blob = await response.blob();
+          // 组件侧拿到的是可访问 URL，这里先还原成 File 对象，再复用现有上传接口。
+          const filePromises = message.files.map(async (fileUIPart) => {
+            if (fileUIPart.url && fileUIPart.filename) {
+              try {
+                const response = await fetch(fileUIPart.url);
+                const blob = await response.blob();
 
-                  // Create a File object from the blob
-                  return new File([blob], fileUIPart.filename, {
-                    type: fileUIPart.mediaType || blob.type,
-                  });
-                } catch (error) {
-                  console.error(
-                    `Failed to fetch file ${fileUIPart.filename}:`,
-                    error,
-                  );
-                  return null;
-                }
+                return new File([blob], fileUIPart.filename, {
+                  type: fileUIPart.mediaType || blob.type,
+                });
+              } catch (error) {
+                console.error(
+                  `Failed to fetch file ${fileUIPart.filename}:`,
+                  error,
+                );
+                return null;
               }
-              return null;
-            });
+            }
 
-            const conversionResults = await Promise.all(filePromises);
-            const files = conversionResults.filter(
-              (file): file is File => file !== null,
+            return null;
+          });
+
+          const conversionResults = await Promise.all(filePromises);
+          const files = conversionResults.filter(
+            (file): file is File => file !== null,
+          );
+          const failedConversions = conversionResults.length - files.length;
+
+          if (failedConversions > 0) {
+            throw new Error(
+              `Failed to prepare ${failedConversions} attachment(s) for upload. Please retry.`,
             );
-            const failedConversions = conversionResults.length - files.length;
+          }
 
-            if (failedConversions > 0) {
-              throw new Error(
-                `Failed to prepare ${failedConversions} attachment(s) for upload. Please retry.`,
-              );
-            }
+          if (files.length > 0) {
+            const uploadResponse = await uploadFiles(streamingThreadId, files);
+            uploadedFileInfo = uploadResponse.files;
 
-            if (!threadId) {
-              throw new Error("Thread is not ready for file upload.");
-            }
+            const uploadedFiles: FileInMessage[] = uploadedFileInfo.map((info) => ({
+              filename: info.filename,
+              size: info.size,
+              path: info.virtual_path,
+              status: "uploaded",
+            }));
 
-            if (files.length > 0) {
-              const uploadResponse = await uploadFiles(threadId, files);
-              uploadedFileInfo = uploadResponse.files;
+            setOptimisticMessages((prev) => {
+              if (prev.length === 0 || !prev[0]) {
+                return prev;
+              }
 
-              // Update optimistic human message with uploaded status + paths
-              const uploadedFiles: FileInMessage[] = uploadedFileInfo.map(
-                (info) => ({
-                  filename: info.filename,
-                  size: info.size,
-                  path: info.virtual_path,
-                  status: "uploaded" as const,
-                }),
-              );
-              setOptimisticMessages((messages) => {
-                if (messages.length > 1 && messages[0]) {
-                  const humanMessage: Message = messages[0];
-                  return [
-                    {
-                      ...humanMessage,
-                      additional_kwargs: { files: uploadedFiles },
-                    },
-                    ...messages.slice(1),
-                  ];
-                }
-                return messages;
-              });
-            }
-          } catch (error) {
-            console.error("Failed to upload files:", error);
-            const errorMessage =
-              error instanceof Error
-                ? error.message
-                : "Failed to upload files.";
-            toast.error(errorMessage);
-            setOptimisticMessages([]);
-            throw error;
+              // 上传完成后把占位文件状态替换成真实服务端返回，后续提交和展示保持一致。
+              return [
+                {
+                  ...prev[0],
+                  additional_kwargs: { files: uploadedFiles },
+                },
+                ...prev.slice(1),
+              ];
+            });
           }
         }
 
-        // Build files metadata for submission (included in additional_kwargs)
-        const filesForSubmit: FileInMessage[] = uploadedFileInfo.map(
-          (info) => ({
-            filename: info.filename,
-            size: info.size,
-            path: info.virtual_path,
-            status: "uploaded" as const,
-          }),
-        );
+        setThreadState((prev) => ({
+          ...prev,
+          threadId: streamingThreadId,
+          isLoading: true,
+          error: undefined,
+        }));
 
-        await thread.submit(
-          {
+        const filesForSubmit: FileInMessage[] = uploadedFileInfo.map((info) => ({
+          filename: info.filename,
+          size: info.size,
+          path: info.virtual_path,
+          status: "uploaded",
+        }));
+
+        const requestBody: StreamRunRequest = {
+          assistant_id: "lead_agent",
+          input: {
             messages: [
               {
                 type: "human",
-                content: [
-                  {
-                    type: "text",
-                    text,
-                  },
-                ],
+                content: text ? [{ type: "text", text }] : "",
                 additional_kwargs:
                   filesForSubmit.length > 0 ? { files: filesForSubmit } : {},
               },
             ],
           },
-          {
-            threadId: threadId,
-            streamSubgraphs: true,
-            streamResumable: true,
-            config: {
-              recursion_limit: 1000,
-            },
-            context: {
-              ...extraContext,
-              ...context,
-              thinking_enabled: context.mode !== "flash",
-              is_plan_mode: context.mode === "pro" || context.mode === "ultra",
-              subagent_enabled: context.mode === "ultra",
-              thread_id: threadId,
-            },
+          config: {
+            recursion_limit: 1000,
           },
-        );
+          stream_mode: ["values"],
+          stream_subgraphs: true,
+          context: {
+            ...extraContext,
+            ...context,
+            thinking_enabled: context.mode !== "flash",
+            is_plan_mode: context.mode === "pro" || context.mode === "ultra",
+            subagent_enabled: context.mode === "ultra",
+            thread_id: streamingThreadId,
+          },
+          metadata: DEFAULT_THREAD_METADATA,
+        };
+
+        await streamThreadRun({
+          threadId: streamingThreadId,
+          body: requestBody,
+          signal: abortController.signal,
+          isMock,
+          onEvent: (event) => {
+            if (
+              requestId !== streamRequestIdRef.current ||
+              activeThreadIdRef.current !== streamingThreadId
+            ) {
+              // 忽略失效请求的回调，避免切线程或重复发送后旧事件污染当前界面。
+              return;
+            }
+
+            if (event.event === "metadata") {
+              setThreadState((prev) => ({
+                ...prev,
+                runId:
+                  typeof event.data.run_id === "string"
+                    ? event.data.run_id
+                    : prev.runId,
+              }));
+              return;
+            }
+
+            if (event.event === "values") {
+              setOptimisticMessages([]);
+              setThreadState((prev) => applyThreadSnapshot(prev, event.data));
+
+              if (typeof event.data.title === "string" && event.data.title) {
+                syncThreadTitle(streamingThreadId, event.data.title);
+              }
+              return;
+            }
+
+            if (event.event === "custom" && event.data) {
+              if (
+                typeof event.data === "object" &&
+                event.data !== null &&
+                "type" in event.data &&
+                event.data.type === "task_running"
+              ) {
+                const taskEvent = event.data as {
+                  type: "task_running";
+                  task_id: string;
+                  message: AIMessage;
+                };
+                updateSubtask({
+                  id: taskEvent.task_id,
+                  latestMessage: taskEvent.message,
+                });
+              }
+
+              if (
+                typeof event.data === "object" &&
+                event.data !== null &&
+                "type" in event.data &&
+                event.data.type === "tool_end" &&
+                "name" in event.data
+              ) {
+                listeners.current.onToolEnd?.({
+                  name: String(event.data.name),
+                  data: "data" in event.data ? event.data.data : event.data,
+                });
+              }
+            }
+          },
+        });
+
+        if (requestId !== streamRequestIdRef.current) {
+          return;
+        }
+
+        let nextState: ThreadStreamState | undefined;
+        setThreadState((prev) => {
+          nextState = {
+            ...prev,
+            isLoading: false,
+          };
+          return nextState;
+        });
+        if (nextState) {
+          listeners.current.onFinish?.(toAgentThreadState(nextState));
+        }
         void queryClient.invalidateQueries({ queryKey: ["threads", "search"] });
       } catch (error) {
+        if (requestId !== streamRequestIdRef.current) {
+          return;
+        }
+
+        if (error instanceof DOMException && error.name === "AbortError") {
+          setThreadState((prev) => ({
+            ...prev,
+            isLoading: false,
+          }));
+          return;
+        }
+
+        const errorMessage =
+          error instanceof Error ? error.message : "Failed to stream thread.";
         setOptimisticMessages([]);
+        setThreadState((prev) => ({
+          ...prev,
+          isLoading: false,
+          error: errorMessage,
+        }));
+        toast.error(errorMessage);
         throw error;
+      } finally {
+        if (requestId === streamRequestIdRef.current) {
+          abortControllerRef.current = null;
+        }
       }
     },
-    [thread, _handleOnStart, context, queryClient],
+    [context, isMock, queryClient, syncThreadTitle, updateSubtask],
   );
 
-  // Merge thread with optimistic messages for display
-  const mergedThread =
+  const mergedThread: ThreadState =
     optimisticMessages.length > 0
-      ? ({
-          ...thread,
-          messages: [...thread.messages, ...optimisticMessages],
-        } as typeof thread)
-      : thread;
+      ? {
+          isLoading: threadState.isLoading,
+          isThreadLoading: threadState.isThreadLoading,
+          messages: [...threadState.messages, ...optimisticMessages],
+          values: {
+            ...threadState.values,
+            messages: [...threadState.messages, ...optimisticMessages],
+          },
+        }
+      : {
+          isLoading: threadState.isLoading,
+          isThreadLoading: threadState.isThreadLoading,
+          messages: threadState.messages,
+          values: {
+            ...threadState.values,
+            messages: threadState.messages,
+          },
+        };
 
   return [mergedThread, sendMessage] as const;
 }
@@ -372,10 +481,8 @@ export function useThreads(
     queryFn: async () => {
       const maxResults = params.limit;
       const initialOffset = params.offset ?? 0;
-      const DEFAULT_PAGE_SIZE = 50;
+      const defaultPageSize = 50;
 
-      // Preserve prior semantics: if a non-positive limit is explicitly provided,
-      // delegate to a single search call with the original parameters.
       if (maxResults !== undefined && maxResults <= 0) {
         const response = await apiClient.threads.search<AgentThreadState>(params);
         return response as AgentThread[];
@@ -383,12 +490,13 @@ export function useThreads(
 
       const pageSize =
         typeof maxResults === "number" && maxResults > 0
-          ? Math.min(DEFAULT_PAGE_SIZE, maxResults)
-          : DEFAULT_PAGE_SIZE;
+          ? Math.min(defaultPageSize, maxResults)
+          : defaultPageSize;
 
       const threads: AgentThread[] = [];
       let offset = initialOffset;
 
+      // SDK search 是分页接口，这里主动拉满，保证调用方拿到的是完整结果集。
       while (true) {
         if (typeof maxResults === "number" && threads.length >= maxResults) {
           break;
@@ -438,7 +546,7 @@ export function useDeleteThread() {
           exact: false,
         },
         (oldData: Array<AgentThread>) => {
-          return oldData.filter((t) => t.thread_id !== threadId);
+          return oldData.filter((thread) => thread.thread_id !== threadId);
         },
       );
     },
@@ -467,17 +575,17 @@ export function useRenameThread() {
           exact: false,
         },
         (oldData: Array<AgentThread>) => {
-          return oldData.map((t) => {
-            if (t.thread_id === threadId) {
+          return oldData.map((thread) => {
+            if (thread.thread_id === threadId) {
               return {
-                ...t,
+                ...thread,
                 values: {
-                  ...t.values,
+                  ...thread.values,
                   title,
                 },
               };
             }
-            return t;
+            return thread;
           });
         },
       );

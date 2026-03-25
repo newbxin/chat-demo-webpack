@@ -8,15 +8,18 @@ import { useThreadStream } from '@/core/threads/hooks';
 import { useLocalSettings } from '@/core/settings/hooks';
 
 export function ChatDemo() {
-  const { currentThread, currentThreadId } = useThreadContext();
+  const { currentThread, currentThreadId, setCurrentThreadId } = useThreadContext();
   const [settings] = useLocalSettings();
-  const [, sendMessage] = useThreadStream({
+  const [thread, sendMessage] = useThreadStream({
     threadId: currentThreadId,
+    initialState: currentThread,
     context: settings.context,
     isMock: true,
+    onStart: setCurrentThreadId,
   });
 
-  if (!currentThread) return <div>Loading...</div>;
+  const activeThread = thread ?? currentThread;
+  if (!activeThread) return <div>Loading...</div>;
 
   const handleSubmit = async (text: string) => {
     await sendMessage(currentThreadId, { text, files: [] });
@@ -26,12 +29,12 @@ export function ChatDemo() {
   return (
     <div className="flex h-screen">
       <main className="flex-1 relative">
-        <ThreadContext.Provider value={{ thread: currentThread, isMock: true }}>
+        <ThreadContext.Provider value={{ thread: activeThread, isMock: true }}>
           <ArtifactsProvider>
             <ChatBox threadId={currentThreadId}>
               <MessageList
                 threadId={currentThreadId}
-                thread={currentThread}
+                thread={activeThread}
               />
             </ChatBox>
           </ArtifactsProvider>
