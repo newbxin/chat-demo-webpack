@@ -1,11 +1,11 @@
 import type { AIMessage, Message } from "@langchain/langgraph-sdk";
 import type { ThreadsClient } from "@langchain/langgraph-sdk/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
 
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
-import type { ThreadState } from "@/types/thread";
+import { SessionType, useSession } from "@/providers/SessionProvider";
 
 import {
   createThread,
@@ -21,7 +21,6 @@ import type { UploadedFileInfo } from "../uploads";
 import { uploadFiles } from "../uploads";
 
 import {
-  createThreadStreamState,
   normalizeIncomingMessages,
   type ThreadStreamState,
 } from "./stream-state";
@@ -34,8 +33,6 @@ export type ToolEndEvent = {
 };
 
 export type ThreadStreamOptions = {
-  threadId?: string | null | undefined;
-  initialState?: ThreadState | null;
   context: LocalSettings["context"];
   isMock?: boolean;
   onStart?: (threadId: string) => void;
@@ -101,19 +98,18 @@ function appendThreadMessage(
   };
 }
 
-export function useThreadStream({
-  threadId,
-  initialState,
-  context,
-  isMock,
-  onStart,
-  onFinish,
-  onToolEnd,
-}: ThreadStreamOptions) {
-  const [threadState, setThreadState] = useState(() =>
-    createThreadStreamState(threadId, initialState),
-  );
-  const [optimisticMessages, setOptimisticMessages] = useState<Message[]>([]);
+export function useThreadStream(
+  sessionType: SessionType,
+  {
+    context,
+    isMock,
+    onStart,
+    onFinish,
+    onToolEnd,
+  }: ThreadStreamOptions,
+) {
+  const { threadState, setThreadState, setOptimisticMessages } =
+    useSession(sessionType);
 
   const listeners = useRef({
     onStart,
@@ -121,7 +117,7 @@ export function useThreadStream({
     onToolEnd,
   });
   const threadStateRef = useRef(threadState);
-  const activeThreadIdRef = useRef<string | null>(threadId ?? null);
+  const activeThreadIdRef = useRef<string | null>(threadState.threadId);
   const streamRequestIdRef = useRef(0);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -134,11 +130,8 @@ export function useThreadStream({
   }, [threadState]);
 
   useEffect(() => {
-    const normalizedThreadId = threadId ?? null;
-    activeThreadIdRef.current = normalizedThreadId;
-    setOptimisticMessages([]);
-    setThreadState(createThreadStreamState(normalizedThreadId, initialState));
-  }, [threadId]);
+    activeThreadIdRef.current = threadState.threadId;
+  }, [threadState.threadId]);
 
   useEffect(() => {
     return () => {
@@ -179,7 +172,6 @@ export function useThreadStream({
 
   const sendMessage = useCallback(
     async (
-      maybeThreadId: string | null | undefined,
       message: PromptInputMessage,
       extraContext?: Record<string, unknown>,
     ) => {
@@ -220,7 +212,7 @@ export function useThreadStream({
       setOptimisticMessages(nextOptimisticMessages);
 
       let resolvedThreadId =
-        maybeThreadId ?? activeThreadIdRef.current ?? threadStateRef.current.threadId;
+        activeThreadIdRef.current ?? threadStateRef.current.threadId;
 
       try {
         if (!resolvedThreadId) {
@@ -469,31 +461,18 @@ export function useThreadStream({
         }
       }
     },
-    [context, isMock, queryClient, syncThreadTitle, updateSubtask],
+    [
+      context,
+      isMock,
+      queryClient,
+      setOptimisticMessages,
+      setThreadState,
+      syncThreadTitle,
+      updateSubtask,
+    ],
   );
 
-  const mergedThread: ThreadState =
-    optimisticMessages.length > 0
-      ? {
-          isLoading: threadState.isLoading,
-          isThreadLoading: threadState.isThreadLoading,
-          messages: [...threadState.messages, ...optimisticMessages],
-          values: {
-            ...threadState.values,
-            messages: [...threadState.messages, ...optimisticMessages],
-          },
-        }
-      : {
-          isLoading: threadState.isLoading,
-          isThreadLoading: threadState.isThreadLoading,
-          messages: threadState.messages,
-          values: {
-            ...threadState.values,
-            messages: threadState.messages,
-          },
-        };
-
-  return [mergedThread, sendMessage] as const;
+  return sendMessage;
 }
 
 export function useThreads(
