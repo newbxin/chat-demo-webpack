@@ -1,21 +1,47 @@
-import { useThreadContext } from '@/providers/ThreadProvider';
-import { MainProvider, SessionType, useSessionContext } from '@/providers/SessionProvider';
+import { useEffect, useMemo, useState } from 'react';
+import { SessionType, useSessionContext } from '@/providers/SessionProvider';
 import { MessageList } from '@/components/workspace/messages';
 import { ChatBox } from '@/components/workspace/chats';
 import { ThreadContext } from '@/components/workspace/messages/context';
 import { ArtifactsProvider } from '@/components/workspace/artifacts/context';
 import { InputBox } from '@/components/InputBox';
+import { createThreadStreamState } from '@/core/threads/stream-state';
 import { useThreadStream } from '@/core/threads/hooks';
 import { useLocalSettings } from '@/core/settings/hooks';
+import { threads } from '@/data/threads';
+import type { Message } from "@langchain/langgraph-sdk";
+import type { ThreadState } from '@/types/thread';
 
-function ChatDemoContent() {
-  const { currentThread, currentThreadId, setCurrentThreadId } = useThreadContext();
+// function ChatDemoContent() {
+function ChatDemo() {
+  // const { currentThread, currentThreadId, setCurrentThreadId } = useThreadContext();
+
+  const [currentThreadId, setCurrentThreadId] = useState(threads[0]?.id || '');
+  const threadData = threads.find(t => t.id === currentThreadId);
+  const currentThread: ThreadState | null = threadData ? {
+    ...threadData.data,
+    isLoading: false,
+    isThreadLoading: false,
+    messages: threadData.data.values.messages as Message[],
+  } : null;
   const [settings] = useLocalSettings();
-  const { mainContext } = useSessionContext(SessionType.main);
+  const [mainContext, mainDispatch] = useSessionContext(SessionType.main);
+
+  const nextThreadState = useMemo(
+    () => createThreadStreamState(currentThreadId, currentThread),
+    [currentThread, currentThreadId],
+  );
+
+  useEffect(() => {
+    // 设置消息列表数据
+    mainDispatch.setThreadState(nextThreadState);
+  }, [mainDispatch, nextThreadState]);
+
+
   const sendMessage = useThreadStream({
     sessionType: SessionType.main,
     threadId: currentThreadId,
-    initialState: currentThread,
+    // initialState: currentThread, // 设置初始值
     context: settings.context,
     isMock: true,
     onStart: setCurrentThreadId,
@@ -51,12 +77,15 @@ function ChatDemoContent() {
   );
 }
 
-export function ChatDemo() {
-  const { currentThread, currentThreadId } = useThreadContext();
 
-  return (
-    <MainProvider initialThreadId={currentThreadId} initialState={currentThread}>
-      <ChatDemoContent />
-    </MainProvider>
-  );
-}
+export { ChatDemo };
+
+// export function ChatDemo() {
+//   const { currentThread, currentThreadId } = useThreadContext();
+
+//   return (
+//     <MainProvider initialThreadId={currentThreadId} initialState={currentThread}>
+//       <ChatDemoContent />
+//     </MainProvider>
+//   );
+// }

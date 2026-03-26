@@ -112,11 +112,7 @@ export function useThreadStream({
   onFinish,
   onToolEnd,
 }: ThreadStreamOptions) {
-  const session = useSessionContext(sessionType);
-  const sessionContext =
-    "mainContext" in session ? session.mainContext : session.agentContext;
-  const sessionDispatch =
-    "mainDispatch" in session ? session.mainDispatch : session.agentDispatch;
+  const [sessionContext, sessionDispatch] = useSessionContext(sessionType);
 
   const listeners = useRef({
     onStart,

@@ -309,31 +309,14 @@ export function AgentProvider({
 
 export function useSessionContext(
   sessionType: SessionType.main,
-): {
-  mainContext: SessionContextValue;
-  mainDispatch: SessionDispatch;
-  MainAction: MainAction;
-};
+): [SessionContextValue, SessionDispatch, MainAction];
 export function useSessionContext(
   sessionType: SessionType.agent,
-): {
-  agentContext: SessionContextValue;
-  agentDispatch: SessionDispatch;
-  AgentAction: AgentAction;
-};
+): [SessionContextValue, SessionDispatch, AgentAction];
 export function useSessionContext(
   sessionType: SessionType,
-):
-  | {
-      mainContext: SessionContextValue;
-      mainDispatch: SessionDispatch;
-      MainAction: MainAction;
-    }
-  | {
-      agentContext: SessionContextValue;
-      agentDispatch: SessionDispatch;
-      AgentAction: AgentAction;
-    };
+): [SessionContextValue, SessionDispatch, MainAction | AgentAction];
+
 export function useSessionContext(sessionType: SessionType) {
   const mainContext = useContext(MainSessionContext);
   const mainDispatch = useContext(MainSessionDispatchContext);
@@ -344,21 +327,13 @@ export function useSessionContext(sessionType: SessionType) {
     if (!mainContext || !mainDispatch) {
       throw new Error("Main session context is not available.");
     }
-    return {
-      mainContext,
-      mainDispatch,
-      MainAction,
-    };
+    return [mainContext, mainDispatch, MainAction];
   }
 
   if (!agentContext || !agentDispatch) {
     throw new Error("Agent session context is not available.");
   }
-  return {
-    agentContext,
-    agentDispatch,
-    AgentAction,
-  };
+  return [agentContext, agentDispatch, AgentAction];
 }
 
 export { AgentAction, MainAction, initAgentContext, initMainContext };
