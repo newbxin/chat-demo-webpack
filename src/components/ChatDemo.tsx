@@ -12,11 +12,9 @@ import { threads } from '@/data/threads';
 import type { Message } from "@langchain/langgraph-sdk";
 import type { ThreadState } from '@/types/thread';
 
-// function ChatDemoContent() {
-function ChatDemo() {
-  // const { currentThread, currentThreadId, setCurrentThreadId } = useThreadContext();
 
-  const [currentThreadId, setCurrentThreadId] = useState(threads[0]?.id || '');
+export function ChatDemo() {
+  const currentThreadId = threads[0]?.id || '';
   const threadData = threads.find(t => t.id === currentThreadId);
   const currentThread: ThreadState | null = threadData ? {
     ...threadData.data,
@@ -25,7 +23,7 @@ function ChatDemo() {
     messages: threadData.data.values.messages as Message[],
   } : null;
   const [settings] = useLocalSettings();
-  const [mainContext, mainDispatch] = useSessionContext(SessionType.main);
+  const [session, sessionDispatch] = useSessionContext(SessionType.main);
 
   const nextThreadState = useMemo(
     () => createThreadStreamState(currentThreadId, currentThread),
@@ -34,8 +32,8 @@ function ChatDemo() {
 
   useEffect(() => {
     // 设置消息列表数据
-    mainDispatch.setThreadState(nextThreadState);
-  }, [mainDispatch, nextThreadState]);
+    sessionDispatch.setThreadState(nextThreadState);
+  }, [nextThreadState]);
 
 
   const sendMessage = useThreadStream({
@@ -44,11 +42,11 @@ function ChatDemo() {
     // initialState: currentThread, // 设置初始值
     context: settings.context,
     isMock: true,
-    onStart: setCurrentThreadId,
+    onStart: sessionDispatch.setThreadId,
   });
 
-  const activeThread = mainContext.thread;
-  const activeThreadId = mainContext.threadId ?? currentThreadId;
+  const activeThread = session.thread;
+  const activeThreadId = session.threadId ?? currentThreadId;
   if (!activeThread) return <div>Loading...</div>;
 
   const handleSubmit = async (text: string) => {
@@ -78,7 +76,6 @@ function ChatDemo() {
 }
 
 
-export { ChatDemo };
 
 // export function ChatDemo() {
 //   const { currentThread, currentThreadId } = useThreadContext();
