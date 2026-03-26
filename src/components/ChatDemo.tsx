@@ -1,4 +1,5 @@
 import { useThreadContext } from '@/providers/ThreadProvider';
+import { MainProvider, SessionType, useSessionContext } from '@/providers/SessionProvider';
 import { MessageList } from '@/components/workspace/messages';
 import { ChatBox } from '@/components/workspace/chats';
 import { ThreadContext } from '@/components/workspace/messages/context';
@@ -7,10 +8,12 @@ import { InputBox } from '@/components/InputBox';
 import { useThreadStream } from '@/core/threads/hooks';
 import { useLocalSettings } from '@/core/settings/hooks';
 
-export function ChatDemo() {
+function ChatDemoContent() {
   const { currentThread, currentThreadId, setCurrentThreadId } = useThreadContext();
   const [settings] = useLocalSettings();
-  const [thread, sendMessage] = useThreadStream({
+  const { mainContext } = useSessionContext(SessionType.main);
+  const sendMessage = useThreadStream({
+    sessionType: SessionType.main,
     threadId: currentThreadId,
     initialState: currentThread,
     context: settings.context,
@@ -18,11 +21,12 @@ export function ChatDemo() {
     onStart: setCurrentThreadId,
   });
 
-  const activeThread = thread ?? currentThread;
+  const activeThread = mainContext.thread;
+  const activeThreadId = mainContext.threadId ?? currentThreadId;
   if (!activeThread) return <div>Loading...</div>;
 
   const handleSubmit = async (text: string) => {
-    await sendMessage(currentThreadId, { text, files: [] });
+    await sendMessage(activeThreadId, { text, files: [] });
   };
 
 
@@ -31,9 +35,9 @@ export function ChatDemo() {
       <main className="flex-1 relative">
         <ThreadContext.Provider value={{ thread: activeThread, isMock: true }}>
           <ArtifactsProvider>
-            <ChatBox threadId={currentThreadId}>
+            <ChatBox threadId={activeThreadId}>
               <MessageList
-                threadId={currentThreadId}
+                threadId={activeThreadId}
                 thread={activeThread}
               />
             </ChatBox>
@@ -44,5 +48,15 @@ export function ChatDemo() {
         </div>
       </main>
     </div>
+  );
+}
+
+export function ChatDemo() {
+  const { currentThread, currentThreadId } = useThreadContext();
+
+  return (
+    <MainProvider initialThreadId={currentThreadId} initialState={currentThread}>
+      <ChatDemoContent />
+    </MainProvider>
   );
 }
