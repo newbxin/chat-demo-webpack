@@ -36,29 +36,6 @@ type SessionAction =
       payload: ThreadStateUpdater;
     }
   | {
-      type: "setThreadId";
-      payload: string | null;
-    }
-  | {
-      type: "setIsLoading";
-      payload: boolean;
-    }
-  | {
-      type: "setIsThreadLoading";
-      payload: boolean;
-    }
-  | {
-      type: "setMessages";
-      payload: Message[];
-    }
-  | {
-      type: "setThreadField";
-      payload: {
-        key: keyof ThreadStreamState;
-        value: ThreadStreamState[keyof ThreadStreamState];
-      };
-    }
-  | {
       type: "setOptimisticMessages";
       payload: Message[] | ((prev: Message[]) => Message[]);
     }
@@ -104,22 +81,12 @@ type SessionDispatch = {
 
 const MainAction = {
   setThreadState: "setThreadState",
-  setThreadId: "setThreadId",
-  setIsLoading: "setIsLoading",
-  setIsThreadLoading: "setIsThreadLoading",
-  setMessages: "setMessages",
-  setThreadField: "setThreadField",
   setOptimisticMessages: "setOptimisticMessages",
   reset: "reset",
 } as const satisfies Record<string, SessionActionType>;
 
 const AgentAction = {
   setThreadState: "setThreadState",
-  setThreadId: "setThreadId",
-  setIsLoading: "setIsLoading",
-  setIsThreadLoading: "setIsThreadLoading",
-  setMessages: "setMessages",
-  setThreadField: "setThreadField",
   setOptimisticMessages: "setOptimisticMessages",
   reset: "reset",
 } as const satisfies Record<string, SessionActionType>;
@@ -169,52 +136,6 @@ function sessionReducer(
       return {
         ...state,
         threadState: nextThreadState,
-      };
-    }
-    case "setThreadId": {
-      return {
-        ...state,
-        threadState: {
-          ...state.threadState,
-          threadId: action.payload,
-        },
-      };
-    }
-    case "setIsLoading": {
-      return {
-        ...state,
-        threadState: {
-          ...state.threadState,
-          isLoading: action.payload,
-        },
-      };
-    }
-    case "setIsThreadLoading": {
-      return {
-        ...state,
-        threadState: {
-          ...state.threadState,
-          isThreadLoading: action.payload,
-        },
-      };
-    }
-    case "setMessages": {
-      return {
-        ...state,
-        threadState: syncThreadMessages(state.threadState, action.payload),
-      };
-    }
-    case "setThreadField": {
-      const { key, value } = action.payload;
-      return {
-        ...state,
-        threadState:
-          key === "messages"
-            ? syncThreadMessages(state.threadState, value as Message[])
-            : {
-                ...state.threadState,
-                [key]: value,
-              },
       };
     }
     case "setOptimisticMessages": {
@@ -281,55 +202,53 @@ function useSessionDispatchValue(dispatch: Dispatch<SessionAction>): SessionDisp
 
   const setThreadId = useCallback(
     (threadId: string | null) => {
-      dispatch({
-        type: "setThreadId",
-        payload: threadId,
-      });
+      setThreadState((prev) => ({
+        ...prev,
+        threadId,
+      }));
     },
-    [dispatch],
+    [setThreadState],
   );
 
   const setIsLoading = useCallback(
     (isLoading: boolean) => {
-      dispatch({
-        type: "setIsLoading",
-        payload: isLoading,
-      });
+      setThreadState((prev) => ({
+        ...prev,
+        isLoading,
+      }));
     },
-    [dispatch],
+    [setThreadState],
   );
 
   const setIsThreadLoading = useCallback(
     (isThreadLoading: boolean) => {
-      dispatch({
-        type: "setIsThreadLoading",
-        payload: isThreadLoading,
-      });
+      setThreadState((prev) => ({
+        ...prev,
+        isThreadLoading,
+      }));
     },
-    [dispatch],
+    [setThreadState],
   );
 
   const setMessages = useCallback(
     (messages: Message[]) => {
-      dispatch({
-        type: "setMessages",
-        payload: messages,
-      });
+      setThreadState((prev) => syncThreadMessages(prev, messages));
     },
-    [dispatch],
+    [setThreadState],
   );
 
   const setThreadField = useCallback(
     <K extends keyof ThreadStreamState>(key: K, value: ThreadStreamState[K]) => {
-      dispatch({
-        type: "setThreadField",
-        payload: {
-          key,
-          value: value as ThreadStreamState[keyof ThreadStreamState],
-        },
-      });
+      setThreadState((prev) =>
+        key === "messages"
+          ? syncThreadMessages(prev, value as Message[])
+          : {
+              ...prev,
+              [key]: value,
+            },
+      );
     },
-    [dispatch],
+    [setThreadState],
   );
 
   const setOptimisticMessages = useCallback(
