@@ -340,12 +340,12 @@ export function useThreadStream({
           stream_mode: ["values"],
           stream_subgraphs: true,
           context: {
-            ...extraContext,
             ...context,
             thinking_enabled: context.mode !== "flash",
             is_plan_mode: context.mode === "pro" || context.mode === "ultra",
             subagent_enabled: context.mode === "ultra",
             thread_id: streamingThreadId,
+            ...extraContext,
           },
           metadata: DEFAULT_THREAD_METADATA,
         };
