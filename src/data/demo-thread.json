@@ -8,7 +8,16 @@
             "text": "Explain what MOE is to a 12-year-old boy"
           }
         ],
-        "additional_kwargs": {},
+        "additional_kwargs": {
+          "files": [
+            {
+              "filename": "leica-nyc-candid.jpg",
+              "size": 100,
+              "url": "https://images.wallpaperscraft.com/image/single/dog_puppy_pool_1310471_300x188.jpg",
+              "status": "uploaded"
+            }
+          ]
+        },
         "response_metadata": {},
         "type": "human",
         "name": null,

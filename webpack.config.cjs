@@ -6,6 +6,7 @@ const { setupMockServer } = require('./src/core/mock/mock-server.cjs');
 
 const config = {
   entry: './src/main.tsx',
+  devtool: 'eval-cheap-module-source-map',
   output: {
     path: path.resolve(__dirname, 'dist'),
     filename: '[name].[contenthash].js',

@@ -4,7 +4,9 @@
       "Bash(npm install:*)",
       "Bash(npm run:*)",
       "Bash(find:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(grep -E \"\\\\.\\(tsx|ts\\)$\")",
+      "Bash(grep -E \"\\\\.\\(ts|tsx|js\\)$\")"
     ]
   }
 }

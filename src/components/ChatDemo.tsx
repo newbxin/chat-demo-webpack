@@ -31,6 +31,7 @@ export function ChatDemo() {
   );
 
   useEffect(() => {
+    // console.log('nextThreadState:', nextThreadState);
     // 设置消息列表数据
     sessionDispatch.setThreadState(nextThreadState);
   }, [nextThreadState]);
@@ -57,7 +58,7 @@ export function ChatDemo() {
   return (
     <div className="flex h-screen">
       <main className="flex-1 relative">
-        <ThreadContext.Provider value={{ thread: activeThread, isMock: true }}>
+        <ThreadContext.Provider value={{ thread: activeThread, threadId: activeThreadId, isMock: true }}>
           <ArtifactsProvider>
             <ChatBox threadId={activeThreadId}>
               <MessageList
