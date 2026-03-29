@@ -1,10 +1,11 @@
 import type { AIMessage, Message } from "@langchain/langgraph-sdk";
 import type { ThreadsClient } from "@langchain/langgraph-sdk/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
 
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
+import { SessionType, useSessionContext } from "@/providers/SessionProvider";
 import type { ThreadState } from "@/types/thread";
 
 import {
@@ -21,7 +22,6 @@ import type { UploadedFileInfo } from "../uploads";
 import { uploadFiles } from "../uploads";
 
 import {
-  createThreadStreamState,
   normalizeIncomingMessages,
   type ThreadStreamState,
 } from "./stream-state";
@@ -36,6 +36,7 @@ export type ToolEndEvent = {
 export type ThreadStreamOptions = {
   threadId?: string | null | undefined;
   initialState?: ThreadState | null;
+  sessionType?: SessionType;
   context: LocalSettings["context"];
   isMock?: boolean;
   onStart?: (threadId: string) => void;
@@ -104,24 +105,24 @@ function appendThreadMessage(
 export function useThreadStream({
   threadId,
   initialState,
+  sessionType = SessionType.main,
   context,
   isMock,
   onStart,
   onFinish,
   onToolEnd,
 }: ThreadStreamOptions) {
-  const [threadState, setThreadState] = useState(() =>
-    createThreadStreamState(threadId, initialState),
-  );
-  const [optimisticMessages, setOptimisticMessages] = useState<Message[]>([]);
+  const [sessionContext, sessionDispatch] = useSessionContext(sessionType);
 
   const listeners = useRef({
     onStart,
     onFinish,
     onToolEnd,
   });
-  const threadStateRef = useRef(threadState);
-  const activeThreadIdRef = useRef<string | null>(threadId ?? null);
+  const threadStateRef = useRef(sessionContext.threadState);
+  const activeThreadIdRef = useRef<string | null>(
+    threadId ?? sessionContext.threadId ?? null,
+  );
   const streamRequestIdRef = useRef(0);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -130,15 +131,17 @@ export function useThreadStream({
   }, [onStart, onFinish, onToolEnd]);
 
   useEffect(() => {
-    threadStateRef.current = threadState;
-  }, [threadState]);
+    threadStateRef.current = sessionContext.threadState;
+  }, [sessionContext.threadState]);
 
   useEffect(() => {
     const normalizedThreadId = threadId ?? null;
     activeThreadIdRef.current = normalizedThreadId;
-    setOptimisticMessages([]);
-    setThreadState(createThreadStreamState(normalizedThreadId, initialState));
-  }, [threadId]);
+    sessionDispatch.resetThreadState({
+      threadId: normalizedThreadId,
+      initialState,
+    });
+  }, [initialState, sessionDispatch, threadId]);
 
   useEffect(() => {
     return () => {
@@ -217,7 +220,7 @@ export function useThreadStream({
         });
       }
       // 在真正拿到服务端快照前，先把用户输入和上传态文件渲染出来，降低发送等待感。
-      setOptimisticMessages(nextOptimisticMessages);
+      sessionDispatch.setOptimisticMessages(nextOptimisticMessages);
 
       let resolvedThreadId =
         maybeThreadId ?? activeThreadIdRef.current ?? threadStateRef.current.threadId;
@@ -232,7 +235,7 @@ export function useThreadStream({
           );
           resolvedThreadId = createdThread.thread_id;
           activeThreadIdRef.current = resolvedThreadId;
-          setThreadState((prev) => ({
+          sessionDispatch.setThreadState((prev) => ({
             ...prev,
             threadId: resolvedThreadId,
           }));
@@ -288,7 +291,7 @@ export function useThreadStream({
               status: "uploaded",
             }));
 
-            setOptimisticMessages((prev) => {
+            sessionDispatch.setOptimisticMessages((prev) => {
               if (prev.length === 0 || !prev[0]) {
                 return prev;
               }
@@ -305,7 +308,7 @@ export function useThreadStream({
           }
         }
 
-        setThreadState((prev) => ({
+        sessionDispatch.setThreadState((prev) => ({
           ...prev,
           threadId: streamingThreadId,
           isLoading: true,
@@ -362,7 +365,7 @@ export function useThreadStream({
             }
 
             if (event.event === "metadata") {
-              setThreadState((prev) => ({
+              sessionDispatch.setThreadState((prev) => ({
                 ...prev,
                 runId:
                   typeof event.data.run_id === "string"
@@ -373,8 +376,10 @@ export function useThreadStream({
             }
 
             if (event.event === "values") {
-              setOptimisticMessages([]);
-              setThreadState((prev) => applyThreadSnapshot(prev, event.data));
+              sessionDispatch.setOptimisticMessages([]);
+              sessionDispatch.setThreadState((prev) =>
+                applyThreadSnapshot(prev, event.data),
+              );
 
               if (typeof event.data.title === "string" && event.data.title) {
                 syncThreadTitle(streamingThreadId, event.data.title);
@@ -384,8 +389,10 @@ export function useThreadStream({
 
             if (event.event === "error" && event.data) {
               const errorMessage = createErrorAIMessage(event.data, requestId);
-              setOptimisticMessages([]);
-              setThreadState((prev) => appendThreadMessage(prev, errorMessage));
+              sessionDispatch.setOptimisticMessages([]);
+              sessionDispatch.setThreadState((prev) =>
+                appendThreadMessage(prev, errorMessage),
+              );
               abortController.abort();
               return;
             }
@@ -429,7 +436,7 @@ export function useThreadStream({
         }
 
         let nextState: ThreadStreamState | undefined;
-        setThreadState((prev) => {
+        sessionDispatch.setThreadState((prev) => {
           nextState = {
             ...prev,
             isLoading: false,
@@ -446,7 +453,7 @@ export function useThreadStream({
         }
 
         if (error instanceof DOMException && error.name === "AbortError") {
-          setThreadState((prev) => ({
+          sessionDispatch.setThreadState((prev) => ({
             ...prev,
             isLoading: false,
           }));
@@ -455,8 +462,8 @@ export function useThreadStream({
 
         const errorMessage =
           error instanceof Error ? error.message : "Failed to stream thread.";
-        setOptimisticMessages([]);
-        setThreadState((prev) => ({
+        sessionDispatch.setOptimisticMessages([]);
+        sessionDispatch.setThreadState((prev) => ({
           ...prev,
           isLoading: false,
           error: errorMessage,
@@ -469,31 +476,10 @@ export function useThreadStream({
         }
       }
     },
-    [context, isMock, queryClient, syncThreadTitle, updateSubtask],
+    [context, isMock, queryClient, sessionDispatch, syncThreadTitle, updateSubtask],
   );
 
-  const mergedThread: ThreadState =
-    optimisticMessages.length > 0
-      ? {
-          isLoading: threadState.isLoading,
-          isThreadLoading: threadState.isThreadLoading,
-          messages: [...threadState.messages, ...optimisticMessages],
-          values: {
-            ...threadState.values,
-            messages: [...threadState.messages, ...optimisticMessages],
-          },
-        }
-      : {
-          isLoading: threadState.isLoading,
-          isThreadLoading: threadState.isThreadLoading,
-          messages: threadState.messages,
-          values: {
-            ...threadState.values,
-            messages: threadState.messages,
-          },
-        };
-
-  return [mergedThread, sendMessage] as const;
+  return sendMessage;
 }
 
 export function useThreads(
