@@ -6,7 +6,8 @@
       "Bash(find:*)",
       "Bash(taskkill:*)",
       "Bash(grep -E \"\\\\.\\(tsx|ts\\)$\")",
-      "Bash(grep -E \"\\\\.\\(ts|tsx|js\\)$\")"
+      "Bash(grep -E \"\\\\.\\(ts|tsx|js\\)$\")",
+      "Bash(git check-ignore:*)"
     ]
   }
 }
