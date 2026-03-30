@@ -49,6 +49,78 @@ const DEFAULT_THREAD_METADATA = {
   source: "Center",
 };
 
+const THREAD_FILE_BASE_URL = "https://assistgateway.paas.cmbchina.cn/api/threads/";
+
+function normalizeMessageFiles(message: Message, threadId: string): Message {
+  const files = message.additional_kwargs?.files;
+
+  if (!Array.isArray(files) || files.length === 0) {
+    return message;
+  }
+
+  let hasChanges = false;
+  const nextFiles = files.map((file) => {
+    if (!file || typeof file !== "object") {
+      return file;
+    }
+
+    const typedFile = file as FileInMessage;
+    if (!typedFile.path) {
+      return file;
+    }
+
+    const nextUrl = `${THREAD_FILE_BASE_URL}${threadId}${typedFile.path}`;
+    if (typedFile.url === nextUrl) {
+      return file;
+    }
+
+    hasChanges = true;
+    return {
+      ...typedFile,
+      url: nextUrl,
+    };
+  });
+
+  if (!hasChanges) {
+    return message;
+  }
+
+  return {
+    ...message,
+    additional_kwargs: {
+      ...message.additional_kwargs,
+      files: nextFiles,
+    },
+  };
+}
+
+function normalizeThreadSnapshotValues(
+  values: ThreadStateResponse["values"],
+  threadId: string,
+): ThreadStateResponse["values"] {
+  if (!Array.isArray(values.messages) || values.messages.length === 0) {
+    return values;
+  }
+
+  let hasChanges = false;
+  const nextMessages = values.messages.map((message) => {
+    const nextMessage = normalizeMessageFiles(message, threadId);
+    if (nextMessage !== message) {
+      hasChanges = true;
+    }
+    return nextMessage;
+  });
+
+  if (!hasChanges) {
+    return values;
+  }
+
+  return {
+    ...values,
+    messages: nextMessages,
+  };
+}
+
 function toAgentThreadState(state: ThreadStreamState): AgentThreadState {
   // 对外暴露的线程状态需要补齐默认值，避免消费方再处理空字段分支。
   return {
@@ -376,13 +448,20 @@ export function useThreadStream({
             }
 
             if (event.event === "values") {
+              const normalizedValues = normalizeThreadSnapshotValues(
+                event.data,
+                streamingThreadId,
+              );
               sessionDispatch.setOptimisticMessages([]);
               sessionDispatch.setThreadState((prev) =>
-                applyThreadSnapshot(prev, event.data),
+                applyThreadSnapshot(prev, normalizedValues),
               );
 
-              if (typeof event.data.title === "string" && event.data.title) {
-                syncThreadTitle(streamingThreadId, event.data.title);
+              if (
+                typeof normalizedValues.title === "string" &&
+                normalizedValues.title
+              ) {
+                syncThreadTitle(streamingThreadId, normalizedValues.title);
               }
               return;
             }
