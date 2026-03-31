@@ -217,14 +217,14 @@ export function useThreadStream({
     threadStateRef.current = sessionContext.threadState;
   }, [sessionContext.threadState]);
 
-  useEffect(() => {
-    const normalizedThreadId = threadId ?? null;
-    activeThreadIdRef.current = normalizedThreadId;
-    sessionDispatch.resetThreadState({
-      threadId: normalizedThreadId,
-      initialState,
-    });
-  }, [initialState, sessionDispatch, threadId]);
+  // useEffect(() => {
+  //   const normalizedThreadId = threadId ?? null;
+  //   activeThreadIdRef.current = normalizedThreadId;
+  //   sessionDispatch.resetThreadState({
+  //     threadId: normalizedThreadId,
+  //     initialState,
+  //   });
+  // }, [initialState, sessionDispatch, threadId]);
 
   useEffect(() => {
     return () => {

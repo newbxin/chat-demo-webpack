@@ -433,6 +433,10 @@ export function MainProvider({
   const contextValue = useMemo(() => buildContextValue(state), [state]);
 
   useEffect(() => {
+    if (initialThreadId == null && initialState == null) {
+      return;
+    }
+
     dispatch({
       type: "reset",
       payload: {
@@ -461,6 +465,10 @@ export function AgentProvider({
   const contextValue = useMemo(() => buildContextValue(state), [state]);
 
   useEffect(() => {
+    if (initialThreadId == null && initialState == null) {
+      return;
+    }
+
     dispatch({
       type: "reset",
       payload: {
