@@ -15,6 +15,7 @@ import {
   createThreadStreamState,
   type ThreadStreamState,
 } from "@/core/threads/stream-state";
+import type { AgentThreadContext } from "@/core/threads/types";
 import type { ThreadState } from "@/types/thread";
 
 export enum SessionType {
@@ -26,8 +27,13 @@ type ThreadStateUpdater =
   | ThreadStreamState
   | ((prev: ThreadStreamState) => ThreadStreamState);
 
+type ThreadContextUpdater =
+  | AgentThreadContext
+  | ((prev: AgentThreadContext) => AgentThreadContext);
+
 type SessionStoreState = {
   threadState: ThreadStreamState;
+  threadContext: AgentThreadContext;
   optimisticMessages: Message[];
 };
 
@@ -39,6 +45,10 @@ type SessionAction =
   | {
       type: "setThreadId";
       payload: string | null;
+    }
+  | {
+      type: "setThreadContext";
+      payload: ThreadContextUpdater;
     }
   | {
       type: "setIsLoading";
@@ -60,6 +70,13 @@ type SessionAction =
       };
     }
   | {
+      type: "setThreadContextField";
+      payload: {
+        key: keyof AgentThreadContext;
+        value: AgentThreadContext[keyof AgentThreadContext];
+      };
+    }
+  | {
       type: "setOptimisticMessages";
       payload: Message[] | ((prev: Message[]) => Message[]);
     }
@@ -68,7 +85,12 @@ type SessionAction =
       payload: {
         threadId?: string | null;
         initialState?: ThreadState | null;
+        initialThreadContext?: AgentThreadContext | null;
       };
+    }
+  | {
+      type: "resetThreadContext";
+      payload?: AgentThreadContext | null;
     }
   | {
       type: "setThreadFiles";
@@ -79,6 +101,7 @@ type SessionActionType = SessionAction["type"];
 
 type SessionContextValue = {
   threadState: ThreadStreamState;
+  threadContext: AgentThreadContext;
   thread: ThreadState;
   threadId: string | null;
   runId?: string;
@@ -93,6 +116,7 @@ type SessionContextValue = {
 type SessionDispatch = {
   setThreadState: (updater: ThreadStateUpdater) => void;
   setThreadId: (threadId: string | null) => void;
+  setThreadContext: (updater: ThreadContextUpdater) => void;
   setIsLoading: (isLoading: boolean) => void;
   setIsThreadLoading: (isThreadLoading: boolean) => void;
   setMessages: (messages: Message[]) => void;
@@ -100,48 +124,74 @@ type SessionDispatch = {
     key: K,
     value: ThreadStreamState[K],
   ) => void;
+  setThreadContextField: <K extends keyof AgentThreadContext>(
+    key: K,
+    value: AgentThreadContext[K],
+  ) => void;
   setOptimisticMessages: (messages: Message[] | ((prev: Message[]) => Message[])) => void;
   resetThreadState: (payload: {
     threadId?: string | null;
     initialState?: ThreadState | null;
+    initialThreadContext?: AgentThreadContext | null;
   }) => void;
+  resetThreadContext: (threadContext?: AgentThreadContext | null) => void;
   setThreadFiles: (files: FileInMessage[]) => void;
 };
 
 const MainAction = {
   setThreadState: "setThreadState",
   setThreadId: "setThreadId",
+  setThreadContext: "setThreadContext",
   setIsLoading: "setIsLoading",
   setIsThreadLoading: "setIsThreadLoading",
   setMessages: "setMessages",
   setThreadField: "setThreadField",
+  setThreadContextField: "setThreadContextField",
   setOptimisticMessages: "setOptimisticMessages",
   reset: "reset",
+  resetThreadContext: "resetThreadContext",
   setThreadFiles: "setThreadFiles",
 } as const satisfies Record<string, SessionActionType>;
 
 const AgentAction = {
   setThreadState: "setThreadState",
   setThreadId: "setThreadId",
+  setThreadContext: "setThreadContext",
   setIsLoading: "setIsLoading",
   setIsThreadLoading: "setIsThreadLoading",
   setMessages: "setMessages",
   setThreadField: "setThreadField",
+  setThreadContextField: "setThreadContextField",
   setOptimisticMessages: "setOptimisticMessages",
   reset: "reset",
+  resetThreadContext: "resetThreadContext",
   setThreadFiles: "setThreadFiles",
 } as const satisfies Record<string, SessionActionType>;
 
 type MainAction = typeof MainAction;
 type AgentAction = typeof AgentAction;
 
+function createEmptyThreadContext(): AgentThreadContext {
+  return {
+    thread_id: "",
+    model_name: undefined,
+    thinking_enabled: false,
+    is_plan_mode: false,
+    subagent_enabled: false,
+    reasoning_effort: undefined,
+    agent_name: undefined,
+  };
+}
+
 const initMainContext: SessionStoreState = {
   threadState: createThreadStreamState(null, null),
+  threadContext: createEmptyThreadContext(),
   optimisticMessages: [],
 };
 
 const initAgentContext: SessionStoreState = {
   threadState: createThreadStreamState(null, null),
+  threadContext: createEmptyThreadContext(),
   optimisticMessages: [],
 };
 
@@ -188,6 +238,16 @@ function sessionReducer(
         },
       };
     }
+    case "setThreadContext": {
+      const nextThreadContext =
+        typeof action.payload === "function"
+          ? action.payload(state.threadContext)
+          : action.payload;
+      return {
+        ...state,
+        threadContext: nextThreadContext,
+      };
+    }
     case "setIsLoading": {
       return {
         ...state,
@@ -222,7 +282,17 @@ function sessionReducer(
             : {
                 ...state.threadState,
                 [key]: value,
-              },
+            },
+      };
+    }
+    case "setThreadContextField": {
+      const { key, value } = action.payload;
+      return {
+        ...state,
+        threadContext: {
+          ...state.threadContext,
+          [key]: value,
+        },
       };
     }
     case "setOptimisticMessages": {
@@ -236,10 +306,17 @@ function sessionReducer(
       };
     }
     case "reset": {
-      const { threadId, initialState } = action.payload;
+      const { threadId, initialState, initialThreadContext } = action.payload;
       return {
         threadState: createThreadStreamState(threadId ?? null, initialState),
+        threadContext: initialThreadContext ?? createEmptyThreadContext(),
         optimisticMessages: [],
+      };
+    }
+    case "resetThreadContext": {
+      return {
+        ...state,
+        threadContext: action.payload ?? createEmptyThreadContext(),
       };
     }
     case "setThreadFiles": {
@@ -285,6 +362,7 @@ function buildContextValue(state: SessionStoreState): SessionContextValue {
 
   return {
     threadState: state.threadState,
+    threadContext: state.threadContext,
     thread,
     threadId: state.threadState.threadId,
     runId: state.threadState.runId,
@@ -302,6 +380,16 @@ function useSessionDispatchValue(dispatch: Dispatch<SessionAction>): SessionDisp
     (updater: ThreadStateUpdater) => {
       dispatch({
         type: "setThreadState",
+        payload: updater,
+      });
+    },
+    [dispatch],
+  );
+
+  const setThreadContext = useCallback(
+    (updater: ThreadContextUpdater) => {
+      dispatch({
+        type: "setThreadContext",
         payload: updater,
       });
     },
@@ -361,6 +449,19 @@ function useSessionDispatchValue(dispatch: Dispatch<SessionAction>): SessionDisp
     [dispatch],
   );
 
+  const setThreadContextField = useCallback(
+    <K extends keyof AgentThreadContext>(key: K, value: AgentThreadContext[K]) => {
+      dispatch({
+        type: "setThreadContextField",
+        payload: {
+          key,
+          value: value as AgentThreadContext[keyof AgentThreadContext],
+        },
+      });
+    },
+    [dispatch],
+  );
+
   const setOptimisticMessages = useCallback(
     (messages: Message[] | ((prev: Message[]) => Message[])) => {
       dispatch({
@@ -372,10 +473,24 @@ function useSessionDispatchValue(dispatch: Dispatch<SessionAction>): SessionDisp
   );
 
   const resetThreadState = useCallback(
-    (payload: { threadId?: string | null; initialState?: ThreadState | null }) => {
+    (payload: {
+      threadId?: string | null;
+      initialState?: ThreadState | null;
+      initialThreadContext?: AgentThreadContext | null;
+    }) => {
       dispatch({
         type: "reset",
         payload,
+      });
+    },
+    [dispatch],
+  );
+
+  const resetThreadContext = useCallback(
+    (threadContext?: AgentThreadContext | null) => {
+      dispatch({
+        type: "resetThreadContext",
+        payload: threadContext,
       });
     },
     [dispatch],
@@ -395,20 +510,26 @@ function useSessionDispatchValue(dispatch: Dispatch<SessionAction>): SessionDisp
     () => ({
       setThreadState,
       setThreadId,
+      setThreadContext,
       setIsLoading,
       setIsThreadLoading,
       setMessages,
       setThreadField,
+      setThreadContextField,
       setOptimisticMessages,
       resetThreadState,
+      resetThreadContext,
       setThreadFiles,
     }),
     [
+      resetThreadContext,
       resetThreadState,
       setIsLoading,
       setIsThreadLoading,
       setMessages,
       setOptimisticMessages,
+      setThreadContext,
+      setThreadContextField,
       setThreadField,
       setThreadId,
       setThreadState,
@@ -421,12 +542,14 @@ type SessionProviderProps = {
   children: ReactNode;
   initialThreadId?: string | null;
   initialState?: ThreadState | null;
+  initialThreadContext?: AgentThreadContext | null;
 };
 
 export function MainProvider({
   children,
   initialThreadId,
   initialState,
+  initialThreadContext,
 }: SessionProviderProps) {
   const [state, dispatch] = useReducer(sessionReducer, initMainContext);
   const dispatchValue = useSessionDispatchValue(dispatch);
@@ -438,9 +561,10 @@ export function MainProvider({
       payload: {
         threadId: initialThreadId ?? null,
         initialState,
+        initialThreadContext,
       },
     });
-  }, [initialState, initialThreadId]);
+  }, [initialState, initialThreadContext, initialThreadId]);
 
   return (
     <MainSessionDispatchContext.Provider value={dispatchValue}>
@@ -455,6 +579,7 @@ export function AgentProvider({
   children,
   initialThreadId,
   initialState,
+  initialThreadContext,
 }: SessionProviderProps) {
   const [state, dispatch] = useReducer(sessionReducer, initAgentContext);
   const dispatchValue = useSessionDispatchValue(dispatch);
@@ -466,9 +591,10 @@ export function AgentProvider({
       payload: {
         threadId: initialThreadId ?? null,
         initialState,
+        initialThreadContext,
       },
     });
-  }, [initialState, initialThreadId]);
+  }, [initialState, initialThreadContext, initialThreadId]);
 
   return (
     <AgentSessionDispatchContext.Provider value={dispatchValue}>
