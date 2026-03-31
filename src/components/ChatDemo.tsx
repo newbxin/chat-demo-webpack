@@ -104,7 +104,6 @@ export function ChatDemo() {
 
 // export function ChatDemo() {
 //   const { currentThread, currentThreadId } = useThreadContext();
-//
 //   return (
 //     <MainProvider initialThreadId={currentThreadId} initialState={currentThread}>
 //       <ChatDemoContent />

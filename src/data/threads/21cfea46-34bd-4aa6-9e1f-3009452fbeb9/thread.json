@@ -8,7 +8,16 @@
             "text": "Explain what MOE is to a 12-year-old boy"
           }
         ],
-        "additional_kwargs": {},
+        "additional_kwargs": {
+          "files": [
+            {
+              "filename": "leica-nyc-candid.jpg",
+              "size": 100,
+              "url": "https://images.wallpaperscraft.com/image/single/dog_puppy_pool_1310471_300x188.jpg",
+              "status": "uploaded"
+            }
+          ]
+        },
         "response_metadata": {},
         "type": "human",
         "name": null,
@@ -407,7 +416,9 @@
           {
             "name": "present_files",
             "args": {
-              "filepaths": ["/mnt/user-data/outputs/doraemon-moe-comic.jpg"]
+              "filepaths": [
+                "/mnt/user-data/outputs/doraemon-moe-comic.jpg"
+              ]
             },
             "id": "call_uve8bo9cdn4by7ftrdumhu1h",
             "type": "tool_call"
@@ -450,7 +461,9 @@
       "outputs_path": "/Users/henry/Desktop/deer-flow/backend/.deer-flow/threads/21cfea46-34bd-4aa6-9e1f-3009452fbeb9/user-data/outputs"
     },
     "uploaded_files": [],
-    "artifacts": ["/mnt/user-data/outputs/doraemon-moe-comic.jpg"]
+    "artifacts": [
+      "/mnt/user-data/outputs/doraemon-moe-comic.jpg"
+    ]
   },
   "next": [],
   "tasks": [],

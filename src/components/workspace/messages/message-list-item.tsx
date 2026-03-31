@@ -26,6 +26,7 @@ import {
   stripUploadedFilesTag,
   type FileInMessage,
 } from "@/core/messages/utils";
+import { useThread } from "./context";
 import { useRehypeSplitWordsIntoSpans } from "@/core/rehype";
 import { humanMessagePlugins } from "@/core/streamdown";
 import { cn } from "@/lib/utils";
@@ -117,14 +118,16 @@ function MessageContent_({
 }) {
   const rehypePlugins = useRehypeSplitWordsIntoSpans(isLoading);
   const isHuman = message.type === "human";
+  const { threadId: contextThreadId } = useThread();
   const { thread_id } = useParams<{ thread_id: string }>();
+  const resolvedThreadId = contextThreadId || thread_id;
   const components = useMemo(
     () => ({
       img: (props: ImgHTMLAttributes<HTMLImageElement>) => (
-        <MessageImage {...props} threadId={thread_id} maxWidth="90%" />
+        <MessageImage {...props} threadId={resolvedThreadId} maxWidth="90%" />
       ),
     }),
-    [thread_id],
+    [resolvedThreadId],
   );
 
   const rawContent = extractContentFromMessage(message);
@@ -150,8 +153,8 @@ function MessageContent_({
   }, [rawContent, isHuman]);
 
   const filesList =
-    files && files.length > 0 && thread_id ? (
-      <RichFilesList files={files} threadId={thread_id} />
+    files && files.length > 0 && resolvedThreadId ? (
+      <RichFilesList files={files} threadId={resolvedThreadId} />
     ) : null;
 
   // Uploading state: mock AI message shown while files upload
@@ -261,6 +264,28 @@ function isImageFile(filename: string): boolean {
   return IMAGE_EXTENSIONS.includes(getFileExt(filename));
 }
 
+function isImageAttachment(file: FileInMessage): boolean {
+  if (isImageFile(file.filename)) {
+    return true;
+  }
+
+  if (typeof file.url === "string" && file.url.startsWith("data:image/")) {
+    return true;
+  }
+
+  if (typeof file.url === "string") {
+    try {
+      const pathname = new URL(file.url).pathname;
+      const ext = pathname.split(".").pop()?.toLowerCase() ?? "";
+      return IMAGE_EXTENSIONS.includes(ext);
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+}
+
 /**
  * Format bytes to human-readable size string
  */
@@ -306,7 +331,7 @@ function RichFileCard({
   threadId: string;
 }) {
   const isUploading = file.status === "uploading";
-  const isImage = isImageFile(file.filename);
+  const isImage = isImageAttachment(file);
 
   if (isUploading) {
     return (
@@ -335,9 +360,10 @@ function RichFileCard({
     );
   }
 
-  if (!file.path) return null;
-
-  const fileUrl = resolveArtifactURL(file.path, threadId);
+  const fileUrl =
+    file.url ??
+    (file.path ? resolveArtifactURL(file.path, threadId) : undefined);
+  if (!fileUrl) return null;
 
   if (isImage) {
     return (

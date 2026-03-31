@@ -301,6 +301,7 @@ export interface FileInMessage {
   filename: string;
   size: number; // bytes
   path?: string; // virtual path, may not be set during upload
+  url?: string; // external URL when file is not served via thread artifacts
   status?: "uploading" | "uploaded";
 }
 

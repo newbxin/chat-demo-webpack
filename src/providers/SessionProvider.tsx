@@ -1,3 +1,4 @@
+import type { FileInMessage } from "@/core/messages/utils";
 import type { Message } from "@langchain/langgraph-sdk";
 import {
   createContext,
@@ -45,6 +46,10 @@ type SessionAction =
         threadId?: string | null;
         initialState?: ThreadState | null;
       };
+    }
+  | {
+      type: "setThreadFiles";
+      payload: FileInMessage[];
     };
 
 type SessionActionType = SessionAction["type"];
@@ -77,18 +82,21 @@ type SessionDispatch = {
     threadId?: string | null;
     initialState?: ThreadState | null;
   }) => void;
+  setThreadFiles: (files: FileInMessage[]) => void;
 };
 
 const MainAction = {
   setThreadState: "setThreadState",
   setOptimisticMessages: "setOptimisticMessages",
   reset: "reset",
+  setThreadFiles: "setThreadFiles",
 } as const satisfies Record<string, SessionActionType>;
 
 const AgentAction = {
   setThreadState: "setThreadState",
   setOptimisticMessages: "setOptimisticMessages",
   reset: "reset",
+  setThreadFiles: "setThreadFiles",
 } as const satisfies Record<string, SessionActionType>;
 
 type MainAction = typeof MainAction;
@@ -153,6 +161,27 @@ function sessionReducer(
       return {
         threadState: createThreadStreamState(threadId ?? null, initialState),
         optimisticMessages: [],
+      };
+    }
+    case "setThreadFiles": {
+      const files = action.payload;
+      const messages = [...state.threadState.messages];
+      // Find the last human message and set its files
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].type === "human") {
+          messages[i] = {
+            ...messages[i],
+            additional_kwargs: {
+              ...messages[i].additional_kwargs,
+              files,
+            },
+          };
+          break;
+        }
+      }
+      return {
+        ...state,
+        threadState: syncThreadMessages(state.threadState, messages),
       };
     }
     default:
@@ -271,6 +300,16 @@ function useSessionDispatchValue(dispatch: Dispatch<SessionAction>): SessionDisp
     [dispatch],
   );
 
+  const setThreadFiles = useCallback(
+    (files: FileInMessage[]) => {
+      dispatch({
+        type: "setThreadFiles",
+        payload: files,
+      });
+    },
+    [dispatch],
+  );
+
   return useMemo(
     () => ({
       setThreadState,
@@ -281,6 +320,7 @@ function useSessionDispatchValue(dispatch: Dispatch<SessionAction>): SessionDisp
       setThreadField,
       setOptimisticMessages,
       resetThreadState,
+      setThreadFiles,
     }),
     [
       resetThreadState,
@@ -291,6 +331,7 @@ function useSessionDispatchValue(dispatch: Dispatch<SessionAction>): SessionDisp
       setThreadField,
       setThreadId,
       setThreadState,
+      setThreadFiles,
     ],
   );
 }

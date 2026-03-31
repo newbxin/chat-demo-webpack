@@ -2,6 +2,7 @@ import type { AIMessage, Message } from "@langchain/langgraph-sdk";
 import type { ThreadsClient } from "@langchain/langgraph-sdk/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef } from "react";
+import { flushSync } from "react-dom";
 import { toast } from "sonner";
 
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
@@ -49,6 +50,88 @@ const DEFAULT_THREAD_METADATA = {
   source: "Center",
 };
 
+function extractMessageText(message: Message): string {
+  if (typeof message.content === "string") {
+    return message.content.trim();
+  }
+
+  if (Array.isArray(message.content)) {
+    return message.content
+      .map((part) => ("text" in part ? part.text : ""))
+      .join("\n")
+      .trim();
+  }
+
+  return "";
+}
+
+function isOptimisticHumanMessage(message: Message): boolean {
+  return (
+    message.type === "human" &&
+    typeof message.id === "string" &&
+    message.id.startsWith("opt-human-")
+  );
+}
+
+function isSameHumanMessage(left: Message, right: Message): boolean {
+  if (left.type !== "human" || right.type !== "human") {
+    return false;
+  }
+
+  return extractMessageText(left) === extractMessageText(right);
+}
+
+// 合并本地消息和后端快照：
+// 1. 优先按 id 更新已有消息
+// 2. 对刚发送的 optimistic human message，按内容匹配后端消息并替换
+// 3. 只在本地和后端都找不到对应项时，才追加新消息
+function reconcileMessages(prevMessages: Message[], incomingMessages: Message[]) {
+  const normalizedIncomingMessages = normalizeIncomingMessages(incomingMessages);
+  const nextMessages = [...prevMessages];
+  const messageIndexById = new Map<string, number>();
+
+  nextMessages.forEach((message, index) => {
+    if (typeof message.id === "string") {
+      messageIndexById.set(message.id, index);
+    }
+  });
+
+  for (const incomingMessage of normalizedIncomingMessages) {
+    const incomingId =
+      typeof incomingMessage.id === "string" ? incomingMessage.id : undefined;
+    const existingIndex =
+      incomingId !== undefined ? messageIndexById.get(incomingId) : undefined;
+
+    if (existingIndex !== undefined) {
+      nextMessages[existingIndex] = incomingMessage;
+      continue;
+    }
+
+    // 后端回传同一条用户消息时，可能会分配一个新的 id，
+    // 这里先按内容匹配并替换本地 optimistic 消息，避免重复追加。
+    const optimisticHumanIndex = nextMessages.findIndex((message) => {
+      return (
+        isOptimisticHumanMessage(message) && isSameHumanMessage(message, incomingMessage)
+      );
+    });
+
+    if (optimisticHumanIndex >= 0) {
+      nextMessages[optimisticHumanIndex] = incomingMessage;
+      if (incomingId) {
+        messageIndexById.set(incomingId, optimisticHumanIndex);
+      }
+      continue;
+    }
+
+    nextMessages.push(incomingMessage);
+    if (incomingId) {
+      messageIndexById.set(incomingId, nextMessages.length - 1);
+    }
+  }
+
+  return normalizeIncomingMessages(nextMessages);
+}
+
 function toAgentThreadState(state: ThreadStreamState): AgentThreadState {
   // 对外暴露的线程状态需要补齐默认值，避免消费方再处理空字段分支。
   return {
@@ -65,7 +148,7 @@ function applyThreadSnapshot(
 ): ThreadStreamState {
   // 服务端 values 是整份状态快照，这里统一做一次消息去重和默认值兜底。
   const nextMessages = Array.isArray(values.messages)
-    ? normalizeIncomingMessages(values.messages)
+    ? reconcileMessages(prev.messages, values.messages)
     : prev.messages;
 
   return {
@@ -220,7 +303,29 @@ export function useThreadStream({
         });
       }
       // 在真正拿到服务端快照前，先把用户输入和上传态文件渲染出来，降低发送等待感。
-      sessionDispatch.setOptimisticMessages(nextOptimisticMessages);
+      // 先把用户消息写入主线程状态，避免界面必须等首个 values 快照后才显示发送结果。
+      flushSync(() => {
+        sessionDispatch.setThreadState((prev) => {
+          const nextMessages = [...prev.messages, optimisticHumanMessage];
+
+          return {
+            ...prev,
+            messages: nextMessages,
+            values: {
+              ...prev.values,
+              messages: nextMessages,
+              artifacts: prev.values.artifacts ?? [],
+              todos: prev.values.todos ?? [],
+            },
+            isLoading: true,
+            error: undefined,
+          };
+        });
+        sessionDispatch.setOptimisticMessages(
+          // optimistic 层只保留上传中的临时 UI，用户消息本体已经进入主消息列表。
+          optimisticFiles.length > 0 ? nextOptimisticMessages.slice(1) : [],
+        );
+      });
 
       let resolvedThreadId =
         maybeThreadId ?? activeThreadIdRef.current ?? threadStateRef.current.threadId;

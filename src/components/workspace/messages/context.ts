@@ -3,6 +3,7 @@ import { createContext, useContext } from "react";
 
 export interface ThreadContextType {
   thread: ThreadState;
+  threadId?: string;
   isMock?: boolean;
 }
 

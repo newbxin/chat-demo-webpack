@@ -12,6 +12,9 @@ const SUPPORTED_RUN_STREAM_MODES = new Set([
 
 const warnedUnsupportedStreamModes = new Set<string>();
 
+/**
+ * 对当前客户端不支持的 stream mode 仅告警一次，避免重复输出噪音日志。
+ */
 export function warnUnsupportedStreamModes(
   modes: string[],
   warn: (message: string) => void = console.warn,
@@ -33,6 +36,9 @@ export function warnUnsupportedStreamModes(
   );
 }
 
+/**
+ * 从运行参数中过滤掉不支持的 `streamMode`，并保持调用方原本的单值或数组结构。
+ */
 export function sanitizeRunStreamOptions<T>(options: T): T {
   if (
     typeof options !== "object" ||
