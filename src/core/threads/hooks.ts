@@ -45,6 +45,16 @@ export type ThreadStreamOptions = {
   onToolEnd?: (event: ToolEndEvent) => void;
 };
 
+export type ThreadStreamControls = {
+  sendMessage: (
+    maybeThreadId: string | null | undefined,
+    message: PromptInputMessage,
+    extraContext?: Record<string, unknown>,
+  ) => Promise<void>;
+  stopStreaming: () => void;
+  isStreaming: boolean;
+};
+
 const DEFAULT_THREAD_METADATA = {
   userInfo: "",
   source: "Center",
@@ -234,6 +244,16 @@ export function useThreadStream({
 
   const queryClient = useQueryClient();
   const updateSubtask = useUpdateSubtask();
+
+  const stopStreaming = useCallback(() => {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    sessionDispatch.setOptimisticMessages([]);
+    sessionDispatch.setThreadState((prev) => ({
+      ...prev,
+      isLoading: false,
+    }));
+  }, [sessionDispatch]);
 
   const syncThreadTitle = useCallback(
     (nextThreadId: string, title: string) => {
@@ -558,6 +578,7 @@ export function useThreadStream({
         }
 
         if (error instanceof DOMException && error.name === "AbortError") {
+          sessionDispatch.setOptimisticMessages([]);
           sessionDispatch.setThreadState((prev) => ({
             ...prev,
             isLoading: false,
@@ -584,7 +605,11 @@ export function useThreadStream({
     [context, isMock, queryClient, sessionDispatch, syncThreadTitle, updateSubtask],
   );
 
-  return sendMessage;
+  return {
+    sendMessage,
+    stopStreaming,
+    isStreaming: sessionContext.threadState.isLoading,
+  } satisfies ThreadStreamControls;
 }
 
 export function useThreads(

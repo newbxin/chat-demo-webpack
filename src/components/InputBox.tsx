@@ -1,15 +1,19 @@
 "use client";
 
-import { ArrowUpIcon } from "lucide-react";
+import { ArrowUpIcon, SquareIcon } from "lucide-react";
 import { useState } from "react";
 
 import { cn } from "@/lib/utils";
 
 export function InputBox({
   className,
+  isStreaming = false,
+  onStop,
   onSubmit,
 }: {
   className?: string;
+  isStreaming?: boolean;
+  onStop?: () => void;
   onSubmit?: (text: string) => void;
 }) {
   const [value, setValue] = useState("");
@@ -28,6 +32,10 @@ export function InputBox({
       )}
       onSubmit={(e) => {
         e.preventDefault();
+        if (isStreaming) {
+          onStop?.();
+          return;
+        }
         handleSubmit();
       }}
     >
@@ -37,6 +45,12 @@ export function InputBox({
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
+          if (isStreaming && e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            onStop?.();
+            return;
+          }
+
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             handleSubmit();
@@ -45,10 +59,22 @@ export function InputBox({
       />
       <button
         className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full disabled:cursor-not-allowed disabled:opacity-50"
-        disabled={!value.trim()}
-        type="submit"
+        disabled={isStreaming ? false : !value.trim()}
+        onClick={(e) => {
+          if (!isStreaming) {
+            return;
+          }
+
+          e.preventDefault();
+          onStop?.();
+        }}
+        type={isStreaming ? "button" : "submit"}
       >
-        <ArrowUpIcon className="size-4" />
+        {isStreaming ? (
+          <SquareIcon className="size-4 fill-current" />
+        ) : (
+          <ArrowUpIcon className="size-4" />
+        )}
       </button>
     </form>
   );

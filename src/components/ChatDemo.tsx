@@ -30,7 +30,7 @@ export function ChatDemo() {
   const [session, sessionDispatch] = useSessionContext(SessionType.main);
   const threadId = session.threadId ?? 'demo-thread';
 
-  const sendMessage = useThreadStream({
+  const { sendMessage, stopStreaming } = useThreadStream({
     sessionType: SessionType.main,
     context: settings.context,
     isMock: true,
@@ -81,7 +81,12 @@ export function ChatDemo() {
           </ArtifactsProvider>
         </ThreadContext.Provider>
         <div className="absolute bottom-0 left-0 right-0 p-4">
-          <InputBox className="mx-auto max-w-3xl" onSubmit={handleSubmit} />
+          <InputBox
+            className="mx-auto max-w-3xl"
+            isStreaming={session.threadState.isLoading}
+            onStop={stopStreaming}
+            onSubmit={handleSubmit}
+          />
         </div>
       </main>
     </div>
