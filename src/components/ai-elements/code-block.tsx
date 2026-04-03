@@ -9,10 +9,9 @@ import {
   type HTMLAttributes,
   useContext,
   useEffect,
-  useRef,
   useState,
 } from "react";
-import { type BundledLanguage, codeToHtml, type ShikiTransformer } from "shiki";
+import type { BundledLanguage, ShikiTransformer } from "shiki";
 
 type CodeBlockProps = HTMLAttributes<HTMLDivElement> & {
   code: string;
@@ -49,11 +48,62 @@ const lineNumberTransformer: ShikiTransformer = {
   },
 };
 
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function createPlainCodeHtml(code: string, showLineNumbers: boolean) {
+  const lines = code.split("\n");
+
+  const renderedLines = lines.map((line, index) => {
+    const content = escapeHtml(line || " ");
+
+    if (!showLineNumbers) {
+      return content;
+    }
+
+    return [
+      '<span class="inline-block min-w-10 mr-4 text-right select-none text-muted-foreground">',
+      String(index + 1),
+      "</span>",
+      content,
+    ].join("");
+  });
+
+  return `<pre class="shiki one-light"><code>${renderedLines.join("\n")}</code></pre>`;
+}
+
+function supportsClientCodeHighlighting() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  try {
+    void new RegExp("(?<=a)b");
+    void new RegExp("(?<name>a)", "u");
+    void new RegExp("\\p{L}", "u");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function highlightCode(
   code: string,
   language: BundledLanguage,
   showLineNumbers = false,
 ) {
+  if (!supportsClientCodeHighlighting()) {
+    const plainHtml = createPlainCodeHtml(code, showLineNumbers);
+    return [plainHtml, plainHtml] as const;
+  }
+
+  const { codeToHtml } = await import("shiki");
   const transformers: ShikiTransformer[] = showLineNumbers
     ? [lineNumberTransformer]
     : [];
@@ -80,21 +130,33 @@ export const CodeBlock = ({
   children,
   ...props
 }: CodeBlockProps) => {
-  const [html, setHtml] = useState<string>("");
-  const [darkHtml, setDarkHtml] = useState<string>("");
-  const mounted = useRef(false);
+  const fallbackHtml = createPlainCodeHtml(code, showLineNumbers);
+  const [html, setHtml] = useState<string>(fallbackHtml);
+  const [darkHtml, setDarkHtml] = useState<string>(fallbackHtml);
 
   useEffect(() => {
-    highlightCode(code, language, showLineNumbers).then(([light, dark]) => {
-      if (!mounted.current) {
-        setHtml(light);
-        setDarkHtml(dark);
-        mounted.current = true;
-      }
-    });
+    let cancelled = false;
+    const plainHtml = createPlainCodeHtml(code, showLineNumbers);
+
+    setHtml(plainHtml);
+    setDarkHtml(plainHtml);
+
+    highlightCode(code, language, showLineNumbers)
+      .then(([light, dark]) => {
+        if (!cancelled) {
+          setHtml(light);
+          setDarkHtml(dark);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHtml(plainHtml);
+          setDarkHtml(plainHtml);
+        }
+      });
 
     return () => {
-      mounted.current = false;
+      cancelled = true;
     };
   }, [code, language, showLineNumbers]);
 

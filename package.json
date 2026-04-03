@@ -3,7 +3,20 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "browserslist": {
+    "production": [
+      "Chrome >= 61",
+      "iOS >= 11",
+      "Safari >= 11"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 safari version",
+      "last 1 ios_saf version"
+    ]
+  },
   "scripts": {
+    "start": "node ./build/start.js",
     "dev": "webpack serve --mode development --config webpack.config.cjs",
     "build": "webpack --mode production --config webpack.config.cjs",
     "typecheck": "tsc --noEmit",
@@ -60,6 +73,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",
+    "@babel/preset-env": "^7.29.2",
     "@babel/preset-react": "^7.28.5",
     "@babel/preset-typescript": "^7.28.5",
     "@tailwindcss/postcss": "^4.2.1",
