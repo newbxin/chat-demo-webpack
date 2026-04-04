@@ -62,6 +62,12 @@ type StreamThreadRunParams = {
   onEvent: (event: ParsedSSEEvent) => void;
 };
 
+export type CancelThreadRunParams = {
+  threadId: string;
+  runId: string;
+  isMock?: boolean;
+};
+
 export function buildRequestHeaders(
   init?: HeadersInit,
 ): Headers {
@@ -154,4 +160,32 @@ export async function streamThreadRun({
   }
 
   await parseSSEStream(response.body, onEvent);
+}
+
+export async function cancelThreadRun({
+  threadId,
+  runId,
+  isMock,
+}: CancelThreadRunParams): Promise<unknown> {
+  const response = await fetch(
+    `${getLangGraphBaseURL(isMock)}/threads/${threadId}/runs/${runId}/cancel?wait=0&action=interrupt`,
+    {
+      method: "POST",
+      headers: buildRequestHeaders(),
+    },
+  );
+
+  if (!response.ok) {
+    const error = await response
+      .json()
+      .catch(() => ({ detail: "Failed to cancel thread run" }));
+    throw new Error(error.detail ?? "Failed to cancel thread run");
+  }
+
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    return undefined;
+  }
+
+  return response.json() as Promise<unknown>;
 }

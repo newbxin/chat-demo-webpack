@@ -53,3 +53,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Notes
 - `src/backup/` 目录包含未使用的旧 UI 组件备份，可考虑清理
 - Mock 流式响应通过 `isMock: true` 参数启用
+
+## Memory
+- 用户是锤子

@@ -10,6 +10,7 @@ import { SessionType, useSessionContext } from "@/providers/SessionProvider";
 import type { ThreadState } from "@/types/thread";
 
 import {
+  cancelThreadRun,
   createThread,
   streamThreadRun,
   type StreamRunRequest,
@@ -216,6 +217,7 @@ export function useThreadStream({
   const activeThreadIdRef = useRef<string | null>(
     threadId ?? sessionContext.threadId ?? null,
   );
+  const activeRunIdRef = useRef<string | null>(sessionContext.threadState.runId ?? null);
   const streamRequestIdRef = useRef(0);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -226,6 +228,10 @@ export function useThreadStream({
   useEffect(() => {
     threadStateRef.current = sessionContext.threadState;
   }, [sessionContext.threadState]);
+
+  useEffect(() => {
+    activeRunIdRef.current = sessionContext.threadState.runId ?? null;
+  }, [sessionContext.threadState.runId]);
 
   // useEffect(() => {
   //   const normalizedThreadId = threadId ?? null;
@@ -246,14 +252,28 @@ export function useThreadStream({
   const updateSubtask = useUpdateSubtask();
 
   const stopStreaming = useCallback(() => {
+    const currentThreadId =
+      activeThreadIdRef.current ?? threadStateRef.current.threadId;
+    const currentRunId = activeRunIdRef.current ?? threadStateRef.current.runId ?? null;
+
+    if (!isMock && currentThreadId && currentRunId) {
+      void cancelThreadRun({
+        threadId: currentThreadId,
+        runId: currentRunId,
+        isMock,
+      }).catch(() => undefined);
+    }
+
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
+    activeRunIdRef.current = null;
     sessionDispatch.setOptimisticMessages([]);
     sessionDispatch.setThreadState((prev) => ({
       ...prev,
       isLoading: false,
+      runId: undefined,
     }));
-  }, [sessionDispatch]);
+  }, [isMock, sessionDispatch]);
 
   const syncThreadTitle = useCallback(
     (nextThreadId: string, title: string) => {
@@ -327,10 +347,12 @@ export function useThreadStream({
       flushSync(() => {
         sessionDispatch.setThreadState((prev) => {
           const nextMessages = [...prev.messages, optimisticHumanMessage];
+          activeRunIdRef.current = null;
 
           return {
             ...prev,
             messages: nextMessages,
+            runId: undefined,
             values: {
               ...prev.values,
               messages: nextMessages,
@@ -436,6 +458,7 @@ export function useThreadStream({
         sessionDispatch.setThreadState((prev) => ({
           ...prev,
           threadId: streamingThreadId,
+          runId: undefined,
           isLoading: true,
           error: undefined,
         }));
@@ -490,12 +513,12 @@ export function useThreadStream({
             }
 
             if (event.event === "metadata") {
+              const nextRunId =
+                typeof event.data.run_id === "string" ? event.data.run_id : null;
+              activeRunIdRef.current = nextRunId;
               sessionDispatch.setThreadState((prev) => ({
                 ...prev,
-                runId:
-                  typeof event.data.run_id === "string"
-                    ? event.data.run_id
-                    : prev.runId,
+                runId: nextRunId ?? prev.runId,
               }));
               return;
             }
@@ -565,9 +588,11 @@ export function useThreadStream({
           nextState = {
             ...prev,
             isLoading: false,
+            runId: undefined,
           };
           return nextState;
         });
+        activeRunIdRef.current = null;
         if (nextState) {
           listeners.current.onFinish?.(toAgentThreadState(nextState));
         }
@@ -578,20 +603,24 @@ export function useThreadStream({
         }
 
         if (error instanceof DOMException && error.name === "AbortError") {
+          activeRunIdRef.current = null;
           sessionDispatch.setOptimisticMessages([]);
           sessionDispatch.setThreadState((prev) => ({
             ...prev,
             isLoading: false,
+            runId: undefined,
           }));
           return;
         }
 
         const errorMessage =
           error instanceof Error ? error.message : "Failed to stream thread.";
+        activeRunIdRef.current = null;
         sessionDispatch.setOptimisticMessages([]);
         sessionDispatch.setThreadState((prev) => ({
           ...prev,
           isLoading: false,
+          runId: undefined,
           error: errorMessage,
         }));
         toast.error(errorMessage);
