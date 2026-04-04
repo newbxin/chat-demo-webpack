@@ -10,11 +10,13 @@ export function InputBox({
   isStreaming = false,
   onStop,
   onSubmit,
+  onShowTime,
 }: {
   className?: string;
   isStreaming?: boolean;
   onStop?: () => void;
   onSubmit?: (text: string) => void;
+  onShowTime?: () => void;
 }) {
   const [value, setValue] = useState("");
 
@@ -57,25 +59,22 @@ export function InputBox({
           }
         }}
       />
-      <button
-        className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full disabled:cursor-not-allowed disabled:opacity-50"
-        disabled={isStreaming ? false : !value.trim()}
-        onClick={(e) => {
-          if (!isStreaming) {
-            return;
-          }
-
-          e.preventDefault();
-          onStop?.();
-        }}
-        type={isStreaming ? "button" : "submit"}
-      >
-        {isStreaming ? (
-          <SquareIcon className="size-4 fill-current" />
-        ) : (
+      <div className="flex shrink-0 items-center gap-2">
+        <button
+          className="rounded-full border border-sky-300 px-3 py-1 text-xs font-medium text-sky-700 transition-colors hover:bg-sky-50"
+          type="button"
+          onClick={onShowTime}
+        >
+          时间
+        </button>
+        <button
+          className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex size-8 cursor-pointer items-center justify-center rounded-full disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={!value.trim()}
+          type="submit"
+        >
           <ArrowUpIcon className="size-4" />
-        )}
-      </button>
+        </button>
+      </div>
     </form>
   );
 }

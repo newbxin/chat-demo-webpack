@@ -16,6 +16,7 @@ import type { Subtask } from "@/core/tasks";
 import { useUpdateSubtask } from "@/core/tasks/context";
 import { cn } from "@/lib/utils";
 import type { ThreadState } from "@/types/thread";
+import ShowTime from "@/components/common/ShowTime";
 
 import { ArtifactFileList } from "../artifacts/artifact-file-list";
 import { StreamingIndicator } from "../streaming-indicator";
@@ -91,6 +92,12 @@ export function MessageList({
                   />
                 )}
                 <ArtifactFileList files={files} threadId={threadId} />
+              </div>
+            );
+          } else if (group.type === "assistant:show-time") {
+            return (
+              <div className="flex w-full justify-center" key={group.id}>
+                <ShowTime />
               </div>
             );
           } else if (group.type === "assistant:subagent") {

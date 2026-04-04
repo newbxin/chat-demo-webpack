@@ -18,13 +18,16 @@ interface AssistantClarificationGroup extends GenericMessageGroup<"assistant:cla
 
 interface AssistantSubagentGroup extends GenericMessageGroup<"assistant:subagent"> {}
 
+interface AssistantShowTimeGroup extends GenericMessageGroup<"assistant:show-time"> {}
+
 type MessageGroup =
   | HumanMessageGroup
   | AssistantProcessingGroup
   | AssistantMessageGroup
   | AssistantPresentFilesGroup
   | AssistantClarificationGroup
-  | AssistantSubagentGroup;
+  | AssistantSubagentGroup
+  | AssistantShowTimeGroup;
 
 export function groupMessages<T>(
   messages: Message[],
@@ -44,7 +47,8 @@ export function groupMessages<T>(
       last &&
       last.type !== "human" &&
       last.type !== "assistant" &&
-      last.type !== "assistant:clarification"
+      last.type !== "assistant:clarification" &&
+      last.type !== "assistant:show-time"
     ) {
       return last;
     }
@@ -86,7 +90,13 @@ export function groupMessages<T>(
     }
 
     if (message.type === "ai") {
-      if (hasPresentFiles(message)) {
+      if (isShowTimeMessage(message)) {
+        groups.push({
+          id: message.id,
+          type: "assistant:show-time",
+          messages: [message],
+        });
+      } else if (hasPresentFiles(message)) {
         groups.push({
           id: message.id,
           type: "assistant:present-files",
@@ -236,6 +246,10 @@ export function hasPresentFiles(message: Message) {
     message.type === "ai" &&
     message.tool_calls?.some((toolCall) => toolCall.name === "present_files")
   );
+}
+
+export function isShowTimeMessage(message: Message) {
+  return message.type === "ai" && message.additional_kwargs?.element === "show_time";
 }
 
 export function isClarificationToolMessage(message: Message) {

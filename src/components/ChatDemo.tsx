@@ -1,94 +1,112 @@
-import { useEffect, useMemo } from 'react';
-import type { Message } from '@langchain/langgraph-sdk';
-import { SessionType, useSessionContext } from '@/providers/SessionProvider';
-import { MessageList } from '@/components/workspace/messages';
-import { ChatBox } from '@/components/workspace/chats';
-import { ThreadContext } from '@/components/workspace/messages/context';
-import { ArtifactsProvider } from '@/components/workspace/artifacts/context';
-import { InputBox } from '@/components/InputBox';
-import { useThreadStream } from '@/core/threads/hooks';
-import { useLocalSettings } from '@/core/settings/hooks';
-import demoThread from '@/data/demo-thread.json';
-import type { ThreadState } from '@/types/thread';
+import { useEffect, useMemo } from "react";
 
-const demoMessages = demoThread.values.messages as Message[];
-const initialDemoThreadState = {
-  threadId: null,
-  isLoading: false,
-  isThreadLoading: false,
-  messages: demoMessages,
-  values: {
-    ...demoThread.values,
-    messages: demoMessages,
-    artifacts: demoThread.values.artifacts ?? [],
-    todos: demoThread.values.todos ?? [],
-  },
-};
+import { InputBox } from "@/components/InputBox";
+import { MessageList } from "@/components/workspace/messages";
+import { ThreadContext } from "@/components/workspace/messages/context";
+import { ArtifactsProvider } from "@/components/workspace/artifacts/context";
+import { ChatBox } from "@/components/workspace/chats";
+import { createShowTimeMessage } from "@/core/messages/show-time";
+import { useLocalSettings } from "@/core/settings/hooks";
+import { createThreadStreamState } from "@/core/threads/stream-state";
+import { useThreadStream } from "@/core/threads/hooks";
+import { threads } from "@/data/threads";
+import { SessionType, useSessionContext } from "@/providers/SessionProvider";
+import type { ThreadState } from "@/types/thread";
+import type { Message } from "@langchain/langgraph-sdk";
 
 export function ChatDemo() {
+  const currentThreadId = threads[0]?.id || "";
+  const threadData = useMemo(
+    () => threads.find((t) => t.id === currentThreadId),
+    [currentThreadId],
+  );
+  const currentThread = useMemo<ThreadState | null>(() => {
+    if (!threadData) {
+      return null;
+    }
+
+    return {
+      ...threadData.data,
+      isLoading: false,
+      isThreadLoading: false,
+      messages: threadData.data.values.messages as Message[],
+    };
+  }, [threadData]);
+
   const [settings] = useLocalSettings();
   const [session, sessionDispatch] = useSessionContext(SessionType.main);
   const threadId = session.threadId ?? 'demo-thread';
 
-  const { sendMessage, stopStreaming } = useThreadStream({
+  const nextThreadState = useMemo(
+    () => createThreadStreamState(currentThreadId, currentThread),
+    [currentThread, currentThreadId],
+  );
+
+  useEffect(() => {
+    sessionDispatch.setThreadState(nextThreadState);
+  }, [nextThreadState, sessionDispatch]);
+
+  const sendMessage = useThreadStream({
     sessionType: SessionType.main,
     context: settings.context,
     isMock: true,
     onStart: sessionDispatch.setThreadId,
   });
 
-  useEffect(() => {
-    sessionDispatch.setThreadState((prev) => {
-      if (prev.messages.length > 0) {
-        return prev;
-      }
-      return {
-        ...initialDemoThreadState,
-        threadId: prev.threadId,
-        runId: prev.runId,
-        error: prev.error,
-      };
-    });
-  }, [sessionDispatch]);
+  const activeThread = session.thread;
+  const activeThreadId = session.threadId ?? currentThreadId;
 
-  const thread = useMemo<ThreadState>(
-    () => ({
-      isLoading: session.threadState.isLoading,
-      isThreadLoading: session.threadState.isThreadLoading,
-      messages: session.threadState.messages,
-      values: {
-        ...session.threadState.values,
-        messages: session.threadState.messages,
-        artifacts: session.threadState.values.artifacts ?? [],
-        todos: session.threadState.values.todos ?? [],
-      },
-    }),
-    [session.threadState],
-  );
+  if (!activeThread) {
+    return <div>Loading...</div>;
+  }
 
   const handleSubmit = async (text: string) => {
     await sendMessage(session.threadId, { text, files: [] });
   };
 
+  const handleShowTime = () => {
+    const showTimeMessage = createShowTimeMessage();
+    sessionDispatch.setThreadState((prev) => {
+      const nextMessages = [...prev.messages, showTimeMessage];
+      return {
+        ...prev,
+        messages: nextMessages,
+        values: {
+          ...prev.values,
+          messages: nextMessages,
+        },
+      };
+    });
+  };
+
   return (
     <div className="flex h-screen">
-      <main className="flex-1 relative">
-        <ThreadContext.Provider value={{ thread, threadId, isMock: true }}>
+      <main className="relative flex-1">
+        <ThreadContext.Provider value={{ thread: activeThread, isMock: true }}>
           <ArtifactsProvider>
-            <ChatBox threadId={threadId}>
-              <MessageList threadId={threadId} thread={thread} />
+            <ChatBox threadId={activeThreadId}>
+              <MessageList threadId={activeThreadId} thread={activeThread} />
             </ChatBox>
           </ArtifactsProvider>
         </ThreadContext.Provider>
-        <div className="absolute bottom-0 left-0 right-0 p-4">
+
+        <div className="absolute right-0 bottom-0 left-0 p-4">
           <InputBox
             className="mx-auto max-w-3xl"
-            isStreaming={session.threadState.isLoading}
-            onStop={stopStreaming}
             onSubmit={handleSubmit}
+            onShowTime={handleShowTime}
           />
         </div>
       </main>
     </div>
   );
 }
+
+// export function ChatDemo() {
+//   const { currentThread, currentThreadId } = useThreadContext();
+//   return (
+//     <MainProvider initialThreadId={currentThreadId} initialState={currentThread}>
+//       <ChatDemoContent />
+//     </MainProvider>
+//   );
+// }
